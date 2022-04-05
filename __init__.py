@@ -11,7 +11,7 @@ bl_info = {
     "blender": (3, 0, 0),
     "category": "Object",
     "description": "Manipulate primitives at any point in time without recreating them",
-    "wiki_url": "something",
+    # "wiki_url": "",
 }
 
 classes = (

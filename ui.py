@@ -16,7 +16,7 @@ class RePrimitivePanel(Panel):
     # if the object exists and the panel is enabled show it
     @classmethod
     def poll(cls, context):
-        return context.object is not None and bpy.context.preferences.addons['RePrimitive'].preferences.show_reprimitive_panel
+        return context.object is not None and bpy.context.preferences.addons[__package__].preferences.show_reprimitive_panel
 
     def draw(self, context):
         layout = self.layout

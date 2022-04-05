@@ -128,7 +128,7 @@ class RePrimitivePrefs(AddonPreferences):
         box.label(text='Support me on:')
         col_1.operator(
             "wm.url_open",
-            text='Gumroad').url = 'https://exzact7.gumroad.com/'
+            text='Gumroad').url = 'https://app.gumroad.com/exzact7'
         col_1.operator(
             "wm.url_open",
             text='Blender Market').url = 'https://blendermarket.com/creators/exzact7'
