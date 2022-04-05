@@ -1310,14 +1310,14 @@ def calculate_sides(ob):
     sides = 0
     group = 0
 
-    if ob.data.name.startswith('Cylinder'):
+    if ob.data.name.startswith(('Cylinder', '柱体')):
         group = 1
         if total_faces == (total_vertices/2)+2 or total_faces == total_vertices/2:
             sides = total_vertices/2
         else:
             sides = total_vertices-2/2
 
-    elif ob.data.name.startswith('Circle'):
+    elif ob.data.name.startswith(('Circle', '圆环')):
         group = 1
         if total_faces == 0:
             cap_type = 'NOTHING'
@@ -1330,7 +1330,7 @@ def calculate_sides(ob):
         else:
             sides = total_vertices
 
-    elif ob.data.name.startswith('Cone'):
+    elif ob.data.name.startswith(('Cone', '锥体')):
         group = 1
 
         # first rotate it by 180 on Y axis because it will be flipped
@@ -1360,15 +1360,15 @@ def calculate_sides(ob):
             else:
                 sides = total_vertices-2
 
-    elif ob.data.name.startswith('Sphere'):
+    elif ob.data.name.startswith(('Sphere', '球体')):
         group = 1
         sides = calculate_sphere_segments(ob)
 
-    elif ob.data.name.startswith('Torus'):
+    elif ob.data.name.startswith(('Torus', '环体')):
         group = 2
         sides = calculate_torus_major_segments(ob)
 
-    elif ob.data.name.startswith('Icosphere'):
+    elif ob.data.name.startswith(('Icosphere', '棱角球')):
         group = 3
 
     return sides, group
@@ -1429,7 +1429,7 @@ def smart_selection(ob):
     function that selects the necessary face in order to rotate the object properly
     """
 
-    if ob.data.name.startswith('Sphere'):
+    if ob.data.name.startswith(('Sphere', '球体')):
 
         # select all quads invert the selection,we get the top and bottom vert
         bpy.ops.mesh.select_face_by_sides(number=4, type='EQUAL')
@@ -1448,15 +1448,15 @@ def smart_selection(ob):
         bpy.ops.view3d.view_axis(type='TOP', align_active=True)
         bpy.ops.mesh.delete(type='FACE')
 
-    elif ob.data.name.startswith('Cylinder'):
+    elif ob.data.name.startswith(('Cylinder', '柱体')):
 
         select_rotational_cylinder(ob)
 
-    elif ob.data.name.startswith('Torus'):
+    elif ob.data.name.startswith(('Torus', '环体')):
 
         insert_middle_face_torus(ob)
 
-    elif ob.data.name.startswith('Circle'):
+    elif ob.data.name.startswith(('Circle', '圆环')):
 
         # count number of current faces
         faces = len(ob.data.polygons)
@@ -1489,11 +1489,11 @@ def smart_selection(ob):
 
             bpy.ops.mesh.delete(type='ONLY_FACE')
 
-    elif ob.data.name.startswith('Cone'):
+    elif ob.data.name.startswith(('Cone', '锥体')):
 
         select_rotational_cone(ob)
 
-    elif ob.data.name.startswith('Icosphere'):
+    elif ob.data.name.startswith(('Icosphere', '棱角球')):
 
         # select the top vert and surrounding faces
         bm = bmesh.from_edit_mesh(ob.data)
