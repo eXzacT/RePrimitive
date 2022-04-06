@@ -118,11 +118,10 @@ def save_location_rotation(ob):
     return Vector(ob.location), Euler(ob.rotation_euler)
 
 
-def fix_cone_origin_and_save_location_rotation(ob):
+def fix_cone_origin_and_save_location_rotation_negative(ob):
     """
-    same as save_location_rotation except this one is specifically for cone to prevent location issues
-    origin to geometry doesn't work well with 1 sided cones so we have to fix it
-    look at https://drive.google.com/file/d/1tn1tpJ6c1lfMBvkmYQAhpQPUxnCknAI5/view?usp=sharing
+    used specifically for cone to prevent location issues because origin to geometry doesn't work well with 1 sided cones so we have to fix it
+    outdated, have to make a new picture->look at https://drive.google.com/file/d/1tn1tpJ6c1lfMBvkmYQAhpQPUxnCknAI5/view?usp=sharing
     """
 
     if ob.location == Vector((0, 0, 0)):
@@ -165,10 +164,10 @@ def fix_cone_origin_and_save_location_rotation(ob):
     return Vector(ob.location), Euler(ob.rotation_euler)
 
 
-def fix_cone_origin_and_save_location_rotation_special(ob):
+def fix_cone_origin_and_save_location_rotation_positive(ob):
     """
-    same as above except this one is for FixAppliedRotation class
-    this is because in it we're flipping the cone by 180 degrees on Y so we have to flip the offset aswell
+    same as above except we're moving the object upwards
+    this is because the cone is flipped by 180 degrees on Y so we have to move it in the opposite direction
     """
 
     if ob.location == Vector((0, 0, 0)):
@@ -809,7 +808,7 @@ def check_if_wrong_sphere_rotation(ob):
     # when this function is called we only know the number of total polygons, not segments or rings
     # by assuming the worst case scenario which is sphere having 3 segments we can say it has rings=polygons/3,
     # this way we're getting maximum possible rings and by covering the worst case scenario we cover all of them
-    return len(points_with_different_Z)-1 > len(ob.data.polygons)/3, len(points_with_different_Z)-1
+    return len(points_with_different_Z)-1 > len(ob.data.polygons)/3
 
 
 def select_smallest_from_selected_faces(faces):

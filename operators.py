@@ -113,9 +113,8 @@ class RePrimitiveCircle(Operator):
         col_1.label(text="Align")
         col_2.prop(self, "align")
 
-    def check(self, context):
-        self.execute(context)
-        return True
+    def modal(self, context, event):
+        return {'FINISHED'}
 
     def invoke(self, context, event):
 
@@ -191,7 +190,8 @@ class RePrimitiveCircle(Operator):
             # we're force calling execute to fix the rotation
             self.execute(context)
 
-        return context.window_manager.invoke_props_dialog(self, width=250)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
 
@@ -291,15 +291,13 @@ class RePrimitiveCone(Operator):
         col_1.label(text="Align")
         col_2.prop(self, "align")
 
-    def check(self, context):
-        self.execute(context)
-        return True
+    def modal(self, context, event):
+        return {'FINISHED'}
 
     def invoke(self, context, event):
 
         applied_rotation = False
         was_filled = False
-        applied_location = False
 
         # before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(
@@ -349,6 +347,7 @@ class RePrimitiveCone(Operator):
                 bm.faces[total_faces-2].select_set(True)
             bpy.ops.mesh.delete(type='FACE')
             bpy.ops.object.editmode_toggle()
+            was_filled = False
 
         self.radius1, self.radius2 = calculate_cone_radiuses(
             context.active_object)
@@ -369,12 +368,39 @@ class RePrimitiveCone(Operator):
             self.saved_object_location, self.saved_object_rotation = save_location_rotation(
                 context.active_object)
 
-        # if cone has a sharp tip origin to geometry won't work so we do this instead
+        # if cone has a sharp tip, origin to geometry won't work so we do this instead
         else:
+
+            # if cone is not manifold origin to center of volume won't work, so we're filling in the face
             if context.active_object.location == Vector((0, 0, 0)):
-                loc_applied = True
-            self.saved_object_location, self.saved_object_rotation = fix_cone_origin_and_save_location_rotation(
-                context.active_object)
+                bpy.ops.object.editmode_toggle()
+                was_filled, total_faces, difference = fill_face_if_non_manifold(
+                    context.active_object)
+                bpy.ops.object.editmode_toggle()
+
+            # look at https://drive.google.com/file/d/1dJnHe81WgO4eUJY4xyjoTFJi5n8h79we/view?usp=sharing
+            # bottom radius is zero, so origin to center of volume is above where it should be which means when location is reset to (0,0,0) the object will be lower
+            # so we're moving the object up
+            if self.radius1 == 0:
+                self.saved_object_location, self.saved_object_rotation = fix_cone_origin_and_save_location_rotation_positive(
+                    context.active_object)
+
+            # top radius is zero, so origin to center of volume is below where it should be which means when location is reset to (0,0,0) the object will be higher
+            # so we're moving the object down
+            else:
+                self.saved_object_location, self.saved_object_rotation = fix_cone_origin_and_save_location_rotation_negative(
+                    context.active_object)
+
+        # if we added a cap, delete the last 2 or 1 depending on cone shape
+        if was_filled:
+            bpy.ops.object.editmode_toggle()
+            bm = bmesh.from_edit_mesh(context.active_object.data)
+            bm.faces.ensure_lookup_table()
+            bm.faces[total_faces-1].select_set(True)
+            if difference == 2:
+                bm.faces[total_faces-2].select_set(True)
+            bpy.ops.mesh.delete(type='FACE')
+            bpy.ops.object.editmode_toggle()
 
         # calculate variables
         self.align = "WORLD"
@@ -443,7 +469,8 @@ class RePrimitiveCone(Operator):
 
             self.execute(context)
 
-        return context.window_manager.invoke_props_dialog(self, width=250)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
 
@@ -535,9 +562,8 @@ class RePrimitiveCylinder(Operator):
         col_1.label(text="Align")
         col_2.prop(self, "align")
 
-    def check(self, context):
-        self.execute(context)
-        return True
+    def modal(self, context, event):
+        return {'FINISHED'}
 
     def invoke(self, context, event):
 
@@ -615,7 +641,8 @@ class RePrimitiveCylinder(Operator):
             # we're force calling execute to fix the rotation
             self.execute(context)
 
-        return context.window_manager.invoke_props_dialog(self, width=250)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
 
@@ -687,9 +714,8 @@ class RePrimitiveIcoSphere(Operator):
         col_1.label(text="Align")
         col_2.prop(self, "align")
 
-    def check(self, context):
-        self.execute(context)
-        return True
+    def modal(self, context, event):
+        return {'FINISHED'}
 
     def invoke(self, context, event):
 
@@ -744,7 +770,8 @@ class RePrimitiveIcoSphere(Operator):
             # we're force calling execute to fix the rotation
             self.execute(context)
 
-        return context.window_manager.invoke_props_dialog(self, width=250)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
 
@@ -835,9 +862,8 @@ class RePrimitiveTorus(Operator):
         col_1.label(text="Align")
         col_2.prop(self, "align")
 
-    def check(self, context):
-        self.execute(context)
-        return True
+    def modal(self, context, event):
+        return {'FINISHED'}
 
     def invoke(self, context, event):
 
@@ -923,7 +949,8 @@ class RePrimitiveTorus(Operator):
             # we're force calling execute to fix the rotation
             self.execute(context)
 
-        return context.window_manager.invoke_props_dialog(self, width=300)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
 
@@ -1007,9 +1034,9 @@ class RePrimitiveUVSphere(Operator):
         col_2.prop(self, "align")
 
     # https://www.youtube.com/watch?v=dQw4w9WgXcQ
-    def check(self, context):
-        self.execute(context)
-        return True
+
+    def modal(self, context, event):
+        return {'FINISHED'}
 
     def invoke(self, context, event):
 
@@ -1073,7 +1100,8 @@ class RePrimitiveUVSphere(Operator):
             # we're force calling execute to fix the rotation
             self.execute(context)
 
-        return context.window_manager.invoke_props_dialog(self, width=250)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
 

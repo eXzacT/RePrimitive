@@ -41,9 +41,8 @@ def menu_func(self, context):
 
 def register():
 
-    addon_updater_ops.register(bl_info)
-
     # register all classes
+    addon_updater_ops.register(bl_info)
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -62,13 +61,11 @@ def register():
                 idname, key, event, ctrl=ctrl, alt=alt, shift=shift)
             addon_keymaps.append((km, kmi))
 
-    # registering menu in Object->
+    # registering menu in Object dropdown menu->
     bpy.types.VIEW3D_MT_object.append(menu_func)
 
 
 def unregister():
-
-    addon_updater_ops.unregister()
 
     # removing all keybinds
     for km, kmi in addon_keymaps:
@@ -76,8 +73,9 @@ def unregister():
     addon_keymaps.clear()
 
     # unregistering all classes
+    addon_updater_ops.unregister()
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
-    # unregistering menu from Object->
+    # unregistering menu from Object dropdown menu->
     bpy.types.VIEW3D_MT_object.remove(menu_func)
