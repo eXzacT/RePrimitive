@@ -1,5 +1,5 @@
 import bpy
-
+from .localization import *
 from .core import *
 from math import log, pi
 from bpy.types import Operator
@@ -19,23 +19,21 @@ class RePrimitive(Operator):
     # can only be called on specific named objects and in object mode
     @classmethod
     def poll(cls, context):
-        allowed_objects = ['Cone', 'Circle', 'Torus',
-                           'Cylinder', 'Sphere', 'Icosphere', '锥体', '圆环', '环体', '柱体', '球体', '棱角球']
-        return any(map(context.active_object.data.name.startswith, allowed_objects)) and bpy.context.mode == 'OBJECT'
+        return context.active_object.data.name.startswith(localization_all) and bpy.context.mode == 'OBJECT'
 
     def execute(self, context):
 
-        if context.active_object.data.name.startswith(('Cylinder', '柱体')):
+        if context.active_object.data.name.startswith(localization_cylinder):
             bpy.ops.object.reprimitive_cylinder('INVOKE_DEFAULT')
-        elif context.active_object.data.name.startswith(('Cone', '锥体')):
+        elif context.active_object.data.name.startswith(localization_cone):
             bpy.ops.object.reprimitive_cone('INVOKE_DEFAULT')
-        elif context.active_object.data.name.startswith(('Circle', '圆环')):
+        elif context.active_object.data.name.startswith(localization_circle):
             bpy.ops.object.reprimitive_circle('INVOKE_DEFAULT')
-        elif context.active_object.data.name.startswith(('Torus', '环体')):
+        elif context.active_object.data.name.startswith(localization_torus):
             bpy.ops.object.reprimitive_torus('INVOKE_DEFAULT')
-        elif context.active_object.data.name.startswith(('Sphere', '球体')):
+        elif context.active_object.data.name.startswith(localization_sphere):
             bpy.ops.object.reprimitive_sphere('INVOKE_DEFAULT')
-        elif context.active_object.data.name.startswith(('Icosphere', '棱角球')):
+        elif context.active_object.data.name.startswith(localization_icosphere):
             bpy.ops.object.reprimitive_icosphere('INVOKE_DEFAULT')
         return {'FINISHED'}
 
@@ -1258,7 +1256,7 @@ class FixAppliedRotation(Operator):
             bpy.ops.object.editmode_toggle()
 
         # cone requires a specific function if location was applied because origin to geometry doesn't work in every case
-        if ob.data.name.startswith(('Cone', '锥体')) and ob.location == Vector((0, 0, 0)):
+        if ob.data.name.startswith(localization_cone) and ob.location == Vector((0, 0, 0)):
 
             # if cone is not manifold, origin to center of volume won't work, so we're filling in the face
             bpy.ops.object.editmode_toggle()
