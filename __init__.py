@@ -1,13 +1,13 @@
 import bpy
 from .operators import RePrimitive, RePrimitiveCircle, RePrimitiveCylinder, RePrimitiveTorus, RePrimitiveIcoSphere, RePrimitiveUVSphere, RePrimitiveCone, FixAppliedRotation, FixAppliedRotationAuto
 from .ui import RePrimitivePanel
-from .prefs import RePrimitivePrefs, DemoUpdaterPanel
+from .prefs import RePrimitivePrefs
 from . import addon_updater_ops
 
 bl_info = {
     "name": "RePrimitive",
     "author": "Damjan Anđelković <damjan.andelkovic1@gmail.com>",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (3, 0, 0),
     "category": "Object",
     "description": "Manipulate primitives at any point in time without recreating them",
@@ -26,7 +26,6 @@ classes = (
     RePrimitiveUVSphere,
     FixAppliedRotation,
     FixAppliedRotationAuto,
-    DemoUpdaterPanel
 )
 
 addon_keymaps = []

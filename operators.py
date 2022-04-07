@@ -46,10 +46,13 @@ class RePrimitiveCircle(Operator):
     bl_label = "Tweak Circle"
     bl_options = {'REGISTER', 'UNDO', 'PRESET', 'INTERNAL'}
 
+    # two bool checks to stop executing code twice from "check" function once OK is pressed or the user clicked outside of the window popup
+    from_check = False
+    execute_on_check = True
+
     # create default values
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
-
     Y = 0
     radius = 1
     vertices = 32
@@ -88,6 +91,11 @@ class RePrimitiveCircle(Operator):
                ('CURSOR', "3D Cursor", "Use the 3d cursor orientation for the new object")],
         default=align_type)
 
+    # bool to know whether operator was called from cancel(clicking away from the popup)
+    operator_called_from_cancel: BoolProperty(
+        name='',
+        default=False)
+
     def draw(self, context):
 
         layout = self.layout
@@ -113,6 +121,20 @@ class RePrimitiveCircle(Operator):
 
     def modal(self, context, event):
         return {'FINISHED'}
+
+    # this function lets us show changes from window popup live
+    def check(self, context):
+        # this will only run ---BEFORE--- "OK" button was pressed / user clicked outside of the window popup
+        # this is how we prevent the execute from running twice, because once the operator isn't in a window popup but rather locked in the bottom left corner check is still getting called and we don't need it
+        if self.execute_on_check:
+            self.from_check = True
+            self.execute(context)
+        return True
+
+    def cancel(self, context):
+        # calling the operator again after user clicked outside of the popup but this time we're also letting it know we called it from cancel
+        bpy.ops.object.reprimitive_circle(
+            'INVOKE_DEFAULT', operator_called_from_cancel=True)
 
     def invoke(self, context, event):
 
@@ -186,15 +208,28 @@ class RePrimitiveCircle(Operator):
 
             # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
             # we're force calling execute to fix the rotation
+            self.from_check = True
             self.execute(context)
 
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # if the user clicked away make the operator show up in the bottom left corner instead of having a popup
+        if self.operator_called_from_cancel:
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        # otherwise just show the popup window
+        else:
+            return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
 
         replace_circle(self.vertices, self.radius, self.cap_fill,
                        self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
+
+        # if execute was ran from check function set to false so execute can run from there again
+        if self.from_check:
+            self.from_check = False
+        # if execute was ran from clicking "OK" or clicking away then disable check from running it again
+        else:
+            self.execute_on_check = False
 
         return {'FINISHED'}
 
@@ -206,6 +241,10 @@ class RePrimitiveCone(Operator):
     bl_idname = "object.reprimitive_cone"
     bl_label = "Tweak Cone"
     bl_options = {'REGISTER', 'UNDO', 'PRESET', 'INTERNAL'}
+
+    # two bool checks to stop executing code twice from "check" function once OK is pressed or the user clicked outside of the window popup
+    from_check = False
+    execute_on_check = True
 
     # create default values
     applied_rotation_and_location = False
@@ -260,6 +299,11 @@ class RePrimitiveCone(Operator):
                ('CURSOR', "3D Cursor", "Use the 3d cursor orientation for the new object")],
         default=align_type)
 
+    # bool to know whether operator was called from cancel(clicking away from the popup)
+    operator_called_from_cancel: BoolProperty(
+        name='',
+        default=False)
+
     def draw(self, context):
 
         layout = self.layout
@@ -291,6 +335,20 @@ class RePrimitiveCone(Operator):
 
     def modal(self, context, event):
         return {'FINISHED'}
+
+    # this function lets us show changes from window popup live
+    def check(self, context):
+        # this will only run ---BEFORE--- "OK" button was pressed / user clicked outside of the window popup
+        # this is how we prevent the execute from running twice, because once the operator isn't in a window popup but rather locked in the bottom left corner check is still getting called and we don't need it
+        if self.execute_on_check:
+            self.from_check = True
+            self.execute(context)
+        return True
+
+    def cancel(self, context):
+        # calling the operator again after user clicked outside of the popup but this time we're also letting it know we called it from cancel
+        bpy.ops.object.reprimitive_cone(
+            'INVOKE_DEFAULT', operator_called_from_cancel=True)
 
     def invoke(self, context, event):
 
@@ -464,11 +522,16 @@ class RePrimitiveCone(Operator):
         # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
         # we're force calling execute to fix the location and rotation
         if applied_rotation or self.applied_rotation_and_location:
-
+            self.from_check = True
             self.execute(context)
 
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # if the user clicked away make the operator show up in the bottom left corner instead of having a popup
+        if self.operator_called_from_cancel:
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        # otherwise just show the popup window
+        else:
+            return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
 
@@ -480,6 +543,13 @@ class RePrimitiveCone(Operator):
             bpy.ops.transform.translate(
                 value=(0, 0, -self.depth/4), orient_axis_ortho='X', orient_type='LOCAL')
 
+        # if execute was ran from check function set to false so execute can run from there again
+        if self.from_check:
+            self.from_check = False
+        # if execute was ran from clicking "OK" or clicking away then disable check from running it again
+        else:
+            self.execute_on_check = False
+
         return {'FINISHED'}
 
 
@@ -490,6 +560,10 @@ class RePrimitiveCylinder(Operator):
     bl_idname = "object.reprimitive_cylinder"
     bl_label = "Tweak Cylinder"
     bl_options = {'REGISTER', 'UNDO', 'PRESET', 'INTERNAL'}
+
+    # two bool checks to stop executing code twice from "check" function once OK is pressed or the user clicked outside of the window popup
+    from_check = False
+    execute_on_check = True
 
     # create default values
     saved_object_location = Vector((0, 0, 0))
@@ -534,6 +608,11 @@ class RePrimitiveCylinder(Operator):
                ('CURSOR', "3D Cursor", "Use the 3d cursor orientation for the new object")],
         default=align_type)
 
+    # bool to know whether operator was called from cancel(clicking away from the popup)
+    operator_called_from_cancel: BoolProperty(
+        name='',
+        default=False)
+
     def draw(self, context):
 
         layout = self.layout
@@ -562,6 +641,20 @@ class RePrimitiveCylinder(Operator):
 
     def modal(self, context, event):
         return {'FINISHED'}
+
+    # this function lets us show changes from window popup live
+    def check(self, context):
+        # this will only run ---BEFORE--- "OK" button was pressed / user clicked outside of the window popup
+        # this is how we prevent the execute from running twice, because once the operator isn't in a window popup but rather locked in the bottom left corner check is still getting called and we don't need it
+        if self.execute_on_check:
+            self.from_check = True
+            self.execute(context)
+        return True
+
+    def cancel(self, context):
+        # calling the operator again after user clicked outside of the popup but this time we're also letting it know we called it from cancel
+        bpy.ops.object.reprimitive_cylinder(
+            'INVOKE_DEFAULT', operator_called_from_cancel=True)
 
     def invoke(self, context, event):
 
@@ -637,15 +730,28 @@ class RePrimitiveCylinder(Operator):
 
             # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
             # we're force calling execute to fix the rotation
+            self.from_check = True
             self.execute(context)
 
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # if the user clicked away make the operator show up in the bottom left corner instead of having a popup
+        if self.operator_called_from_cancel:
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        # otherwise just show the popup window
+        else:
+            return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
 
         replace_cylinder(self.vertices, self.radius, self.depth, self.cap_fill, self.saved_object_location, self.saved_object_rotation,
                          self.align, self.b_UV)
+
+        # if execute was ran from check function set to false so execute can run from there again
+        if self.from_check:
+            self.from_check = False
+        # if execute was ran from clicking "OK" or clicking away then disable check from running it again
+        else:
+            self.execute_on_check = False
 
         return {'FINISHED'}
 
@@ -657,6 +763,10 @@ class RePrimitiveIcoSphere(Operator):
     bl_idname = "object.reprimitive_icosphere"
     bl_label = "Tweak IcoSphere"
     bl_options = {'REGISTER', 'UNDO', 'PRESET', 'INTERNAL'}
+
+    # two bool checks to stop executing code twice from "check" function once OK is pressed or the user clicked outside of the window popup
+    from_check = False
+    execute_on_check = True
 
     # create default values
     saved_object_location = Vector((0, 0, 0))
@@ -692,6 +802,11 @@ class RePrimitiveIcoSphere(Operator):
                ('CURSOR', "3D Cursor", "Use the 3d cursor orientation for the new object")],
         default=align_type)
 
+    # bool to know whether operator was called from cancel(clicking away from the popup)
+    operator_called_from_cancel: BoolProperty(
+        name='',
+        default=False)
+
     def draw(self, context):
 
         layout = self.layout
@@ -714,6 +829,20 @@ class RePrimitiveIcoSphere(Operator):
 
     def modal(self, context, event):
         return {'FINISHED'}
+
+    # this function lets us show changes from window popup live
+    def check(self, context):
+        # this will only run ---BEFORE--- "OK" button was pressed / user clicked outside of the window popup
+        # this is how we prevent the execute from running twice, because once the operator isn't in a window popup but rather locked in the bottom left corner check is still getting called and we don't need it
+        if self.execute_on_check:
+            self.from_check = True
+            self.execute(context)
+        return True
+
+    def cancel(self, context):
+        # calling the operator again after user clicked outside of the popup but this time we're also letting it know we called it from cancel
+        bpy.ops.object.reprimitive_icosphere(
+            'INVOKE_DEFAULT', operator_called_from_cancel=True)
 
     def invoke(self, context, event):
 
@@ -766,15 +895,28 @@ class RePrimitiveIcoSphere(Operator):
 
             # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
             # we're force calling execute to fix the rotation
+            self.from_check = True
             self.execute(context)
 
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # if the user clicked away make the operator show up in the bottom left corner instead of having a popup
+        if self.operator_called_from_cancel:
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        # otherwise just show the popup window
+        else:
+            return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
 
         replace_icosphere(self.subdivisions, self.radius, self.saved_object_location,
                           self.saved_object_rotation, self.align, self.b_UV)
+
+        # if execute was ran from check function set to false so execute can run from there again
+        if self.from_check:
+            self.from_check = False
+        # if execute was ran from clicking "OK" or clicking away then disable check from running it again
+        else:
+            self.execute_on_check = False
 
         return {'FINISHED'}
 
@@ -786,6 +928,10 @@ class RePrimitiveTorus(Operator):
     bl_idname = "object.reprimitive_torus"
     bl_label = "Tweak Torus"
     bl_options = {'REGISTER', 'UNDO', 'PRESET', 'INTERNAL'}
+
+    # two bool checks to stop executing code twice from "check" function once OK is pressed or the user clicked outside of the window popup
+    from_check = False
+    execute_on_check = True
 
     # create default values
     saved_object_location = Vector((0, 0, 0))
@@ -834,6 +980,11 @@ class RePrimitiveTorus(Operator):
                ('CURSOR', "3D Cursor", "Use the 3d cursor orientation for the new object")],
         default=align_type)
 
+    # bool to know whether operator was called from cancel(clicking away from the popup)
+    operator_called_from_cancel: BoolProperty(
+        name='',
+        default=False)
+
     def draw(self, context):
 
         layout = self.layout
@@ -859,6 +1010,20 @@ class RePrimitiveTorus(Operator):
 
         col_1.label(text="Align")
         col_2.prop(self, "align")
+
+    # this function lets us show changes from window popup live
+    def check(self, context):
+        # this will only run ---BEFORE--- "OK" button was pressed / user clicked outside of the window popup
+        # this is how we prevent the execute from running twice, because once the operator isn't in a window popup but rather locked in the bottom left corner check is still getting called and we don't need it
+        if self.execute_on_check:
+            self.from_check = True
+            self.execute(context)
+        return True
+
+    def cancel(self, context):
+        # calling the operator again after user clicked outside of the popup but this time we're also letting it know we called it from cancel
+        bpy.ops.object.reprimitive_torus(
+            'INVOKE_DEFAULT', operator_called_from_cancel=True)
 
     def modal(self, context, event):
         return {'FINISHED'}
@@ -945,15 +1110,28 @@ class RePrimitiveTorus(Operator):
 
             # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
             # we're force calling execute to fix the rotation
+            self.from_check = True
             self.execute(context)
 
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # if the user clicked away make the operator show up in the bottom left corner instead of having a popup
+        if self.operator_called_from_cancel:
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        # otherwise just show the popup window
+        else:
+            return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
 
         replace_torus(self.major_segments, self.minor_segments, self.major_radius, self.minor_radius,
                       self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
+
+        # if execute was ran from check function set to false so execute can run from there again
+        if self.from_check:
+            self.from_check = False
+        # if execute was ran from clicking "OK" or clicking away then disable check from running it again
+        else:
+            self.execute_on_check = False
 
         return {'FINISHED'}
 
@@ -965,6 +1143,10 @@ class RePrimitiveUVSphere(Operator):
     bl_idname = "object.reprimitive_sphere"
     bl_label = "Tweak UVSphere"
     bl_options = {'REGISTER', 'UNDO', 'PRESET', 'INTERNAL'}
+
+    # two bool checks to stop executing code twice from "check" function once OK is pressed or the user clicked outside of the window popup
+    from_check = False
+    execute_on_check = True
 
     # create default values
     saved_object_location = Vector((0, 0, 0))
@@ -1008,6 +1190,11 @@ class RePrimitiveUVSphere(Operator):
                ('CURSOR', "3D Cursor", "Use the 3d cursor orientation for the new object")],
         default=align_type)
 
+    # bool to know whether operator was called from cancel(clicking away from the popup)
+    operator_called_from_cancel: BoolProperty(
+        name='',
+        default=False)
+
     def draw(self, context):
 
         layout = self.layout
@@ -1035,6 +1222,20 @@ class RePrimitiveUVSphere(Operator):
 
     def modal(self, context, event):
         return {'FINISHED'}
+
+    # this function lets us show changes from window popup live
+    def check(self, context):
+        # this will only run ---BEFORE--- "OK" button was pressed / user clicked outside of the window popup
+        # this is how we prevent the execute from running twice, because once the operator isn't in a window popup but rather locked in the bottom left corner check is still getting called and we don't need it
+        if self.execute_on_check:
+            self.from_check = True
+            self.execute(context)
+        return True
+
+    def cancel(self, context):
+        # calling the operator again after user clicked outside of the popup but this time we're also letting it know we called it from cancel
+        bpy.ops.object.reprimitive_sphere(
+            'INVOKE_DEFAULT', operator_called_from_cancel=True)
 
     def invoke(self, context, event):
 
@@ -1096,15 +1297,28 @@ class RePrimitiveUVSphere(Operator):
 
             # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
             # we're force calling execute to fix the rotation
+            self.from_check = True
             self.execute(context)
 
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        # if the user clicked away make the operator show up in the bottom left corner instead of having a popup
+        if self.operator_called_from_cancel:
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        # otherwise just show the popup window
+        else:
+            return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
 
         replace_uv_sphere(self.segments, self.rings, self.radius,
                           self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
+
+        # if execute was ran from check function set to false so execute can run from there again
+        if self.from_check:
+            self.from_check = False
+        # if execute was ran from clicking "OK" or clicking away then disable check from running it again
+        else:
+            self.execute_on_check = False
 
         return {'FINISHED'}
 
