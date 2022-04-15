@@ -19,7 +19,7 @@ class RePrimitive(Operator):
     # can only be called on specific named objects and in object mode
     @classmethod
     def poll(cls, context):
-        return context.active_object.data.name.startswith(localization_all) and bpy.context.mode == 'OBJECT'
+        return context.active_object!=None and context.active_object.data.name.startswith(localization_all) and bpy.context.mode == 'OBJECT'
 
     def execute(self, context):
 
@@ -1449,12 +1449,17 @@ class FixAppliedRotationAuto(Operator):
 
 class FixAppliedRotation(Operator):
     """
-    Fix applied rotation so it is truly (0,0,0)
+    Fix applied rotation so it is truly (0,0,0).
     """
     bl_idname = "object.fix_applied_rotation"
     bl_label = "Fix Applied Rotation"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # can only be called if object exists
+    @classmethod
+    def poll(cls, context):
+        return context.active_object!=None
+    
     def execute(self, context):
 
         # save original object ref and name
