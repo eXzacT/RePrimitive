@@ -71,7 +71,7 @@ If you wanted to get the window popup again you would just use the keybind/click
 
 To fix the primitive shape rotation all you have to do is select it and press the keybind/button from OBJECT mode.<br />
 The rotation could also be fixed from EDIT mode but make sure nothing is selected OR select the face/faces you would want to be on top yourself.<br />
-This was inteded for complex shapes however, for primitive shapes I suggest you select nothing in EDIT mode or do it from OBJECT mode
+This was intended for complex shapes however, for primitive shapes I suggest you select nothing in EDIT mode or do it from OBJECT mode
 
 In case of a monkey head or any other complex shape fixing rotation from object mode most likely will not work.<br />
 Instead you have to go to edit mode and select the face or faces you would like to be on top.<br />
