@@ -19,7 +19,7 @@ class RePrimitive(Operator):
     # can only be called on specific named objects and in object mode
     @classmethod
     def poll(cls, context):
-        return context.active_object!=None and context.active_object.data.name.startswith(localization_all) and bpy.context.mode == 'OBJECT'
+        return context.active_object != None and context.active_object.data.name.startswith(localization_all) and bpy.context.mode == 'OBJECT'
 
     def execute(self, context):
 
@@ -168,9 +168,9 @@ class RePrimitiveCircle(Operator):
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # calculate variables
-        if(len(context.active_object.data.polygons)) == 0:
+        if (len(context.active_object.data.polygons)) == 0:
             self.cap_type = 'NOTHING'
-        elif(len(context.active_object.data.polygons)) == 1:
+        elif (len(context.active_object.data.polygons)) == 1:
             self.cap_type = 'NGON'
         else:
             self.cap_type = 'TRIFAN'
@@ -541,7 +541,9 @@ class RePrimitiveCone(Operator):
         # fix the location if both rotation and location were applied
         if self.applied_rotation_and_location:
             bpy.ops.transform.translate(
-                value=(0, 0, -self.depth/4), orient_axis_ortho='X', orient_type='LOCAL')
+                value=(0, 0, -self.depth/4),
+                orient_type='LOCAL'
+            )
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -869,7 +871,7 @@ class RePrimitiveIcoSphere(Operator):
                 # the above function also spawns a cube that we use to reapply the rotation as it was before fixing but this time it won't be (0,0,0)
                 self.saved_object_rotation = Euler(
                     context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
-                #context.active_object.rotation_euler = self.saved_object_rotation
+                # context.active_object.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
                 cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
@@ -1458,8 +1460,8 @@ class FixAppliedRotation(Operator):
     # can only be called if object exists
     @classmethod
     def poll(cls, context):
-        return context.active_object!=None
-    
+        return context.active_object != None
+
     def execute(self, context):
 
         # save original object ref and name

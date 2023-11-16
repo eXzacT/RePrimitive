@@ -157,7 +157,7 @@ def fix_cone_origin_and_save_location_rotation_negative(ob):
 
         # and move it on local Z by the positive offset to restore the original location
         bpy.ops.transform.translate(
-            value=(0, 0, offset), orient_axis_ortho='X', orient_type='LOCAL')
+            value=(0, 0, offset), orient_type='LOCAL')
 
         # restore cursor location
         bpy.context.scene.cursor.location = cursor_loc
@@ -203,7 +203,7 @@ def fix_cone_origin_and_save_location_rotation_positive(ob):
 
         # and move it on local Z by the negative offset to restore the original location
         bpy.ops.transform.translate(
-            value=(0, 0, -offset), orient_axis_ortho='X', orient_type='LOCAL')
+            value=(0, 0, -offset), orient_type='LOCAL')
 
         # restore cursor location
         bpy.context.scene.cursor.location = cursor_loc
