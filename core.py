@@ -13,6 +13,14 @@ def distance_vec(point1: Vector, point2: Vector) -> float:
     return (point2 - point1).length
 
 
+def compare_vec(point1: Vector, point2: Vector):
+    """
+    Compares whether two vectors are basically the same
+    """
+    tolerance = 1e-6
+    return distance_vec(point1, point2) < tolerance
+
+
 def save_reset_and_apply_transforms(ob):
 
     saved_loc = Vector(ob.location)
@@ -24,7 +32,7 @@ def save_reset_and_apply_transforms(ob):
     return saved_loc, saved_rot
 
 
-def fill_face_if_non_manifold(ob):
+def fill_face(ob):
 
     was_filled = False
     difference = 0
@@ -109,14 +117,19 @@ def find_tip_and_neighbour_vert(ob):
 
 def save_location_rotation(ob):
     """
-    return location and rotation, also set origin to geometry if the location is (0,0,0) in case the location was applied
+    Returns the true location and (possibly true) rotation of an object, at this point we can't know about the true rotation
     """
+    cursor_loc = Vector(bpy.context.scene.cursor.location)
+    ob_loc = Vector(ob.location)
 
-    if ob.location == Vector((0, 0, 0)):
-        # this gives us the true location of the object
-        bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
+    # Is the origin set to cursor?
+    set_origin_to_cursor = False
+    if (ob_loc-cursor_loc).length < 1e-5:
+        set_origin_to_cursor = True
 
-    return Vector(ob.location), Euler(ob.rotation_euler)
+    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
+
+    return Vector(ob.location), Euler(ob.rotation_euler), set_origin_to_cursor
 
 
 def fix_cone_origin_and_save_location_rotation_negative(ob):
@@ -125,44 +138,47 @@ def fix_cone_origin_and_save_location_rotation_negative(ob):
     outdated, have to make a new picture->look at https://drive.google.com/file/d/1tn1tpJ6c1lfMBvkmYQAhpQPUxnCknAI5/view?usp=sharing
     """
 
-    if ob.location == Vector((0, 0, 0)):
+    # Check whether the origin is set to cursor, so we know whether to set it back to cursor later
+    ob_loc = Vector(ob.location)
+    cursor_loc = Vector(bpy.context.scene.cursor.location)
+    set_origin_to_cursor = False
+    if (ob_loc-cursor_loc).length < 1e-5:
+        set_origin_to_cursor = True
 
-        # set origin to generate a location for the object in case the location isn't true (0,0,0) but rather applied
-        bpy.ops.object.origin_set(
-            type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
+    # set origin to generate a location for the object in case the location isn't true (0,0,0) but rather applied
+    bpy.ops.object.origin_set(
+        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
 
-        # saving the rotation and setting it to 0 so the object would be moved on Z axis properly
-        saved_rot = Euler(ob.rotation_euler)
-        ob.rotation_euler = (0, 0, 0)
+    # saving the rotation and setting it to 0 so the object would be moved on Z axis properly
+    saved_rot = Euler(ob.rotation_euler)
+    ob.rotation_euler = (0, 0, 0)
 
-        # save cursor location and set it to (0,0,0)
-        cursor_loc = Vector(bpy.context.scene.cursor.location)
-        bpy.context.scene.cursor.location = (0, 0, 0)
+    bpy.context.scene.cursor.location = (0, 0, 0)
 
-        # setting origin to center of volume, this offsets the usual origin when the object is first made so we have to tweak it to match the original
-        bpy.ops.object.origin_set(
-            type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-        save_location = Vector(ob.location)
+    # setting origin to center of volume, this offsets the usual origin when the object is first made so we have to tweak it to match the original
+    bpy.ops.object.origin_set(
+        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
+    save_location = Vector(ob.location)
 
-        # offsetting the object on Z by the negative offset
-        offset = ob.dimensions[2]/4
-        ob.location = (0, 0, -offset)
+    # offsetting the object on Z by the negative offset
+    offset = ob.dimensions[2]/4
+    ob.location = (0, 0, -offset)
 
-        # setting the origin to cursor(which is on (0,0,0)), now the object origin matches blender's algorithm
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+    # setting the origin to cursor(which is on (0,0,0)), now the object origin matches blender's algorithm
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
-        # restore object location and rotation
-        ob.location = save_location
-        ob.rotation_euler = saved_rot
+    # restore object location and rotation
+    ob.location = save_location
+    ob.rotation_euler = saved_rot
 
-        # and move it on local Z by the positive offset to restore the original location
-        bpy.ops.transform.translate(
-            value=(0, 0, offset), orient_type='LOCAL')
+    # and move it on local Z by the positive offset to restore the original location
+    bpy.ops.transform.translate(
+        value=(0, 0, offset), orient_type='LOCAL')
 
-        # restore cursor location
-        bpy.context.scene.cursor.location = cursor_loc
+    # restore cursor location
+    bpy.context.scene.cursor.location = cursor_loc
 
-    return Vector(ob.location), Euler(ob.rotation_euler)
+    return Vector(ob.location), Euler(ob.rotation_euler), set_origin_to_cursor
 
 
 def fix_cone_origin_and_save_location_rotation_positive(ob):
@@ -171,44 +187,48 @@ def fix_cone_origin_and_save_location_rotation_positive(ob):
     this is because the cone is flipped by 180 degrees on Y so we have to move it in the opposite direction
     """
 
-    if ob.location == Vector((0, 0, 0)):
+    # Check whether the origin is set to cursor, so we know whether to set it back to cursor later
+    ob_loc = Vector(ob.location)
+    cursor_loc = Vector(bpy.context.scene.cursor.location)
 
-        # set origin to generate a location for the object in case the location isn't true (0,0,0) but rather applied
-        bpy.ops.object.origin_set(
-            type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
+    set_origin_to_cursor = False
+    if (ob_loc-cursor_loc).length < 1e-5:
+        set_origin_to_cursor = True
 
-        # saving the rotation and setting it to 0 so the object would be moved on Z axis properly
-        saved_rot = Euler(ob.rotation_euler)
-        ob.rotation_euler = (0, 0, 0)
+    # set origin to generate a location for the object in case the location isn't true (0,0,0) but rather applied
+    bpy.ops.object.origin_set(
+        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
 
-        # save cursor location and set it to (0,0,0)
-        cursor_loc = Vector(bpy.context.scene.cursor.location)
-        bpy.context.scene.cursor.location = (0, 0, 0)
+    # saving the rotation and setting it to 0 so the object would be moved on Z axis properly
+    saved_rot = Euler(ob.rotation_euler)
+    ob.rotation_euler = (0, 0, 0)
 
-        # setting origin to center of volume, this offsets the usual origin when the object is first made so we have to tweak it to match the original
-        bpy.ops.object.origin_set(
-            type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-        save_location = Vector(ob.location)
+    bpy.context.scene.cursor.location = (0, 0, 0)
 
-        # offsetting the object on Z by the positive offset
-        offset = ob.dimensions[2]/4
-        ob.location = (0, 0, offset)
+    # setting origin to center of volume, this offsets the usual origin when the object is first made so we have to tweak it to match the original
+    bpy.ops.object.origin_set(
+        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
+    save_location = Vector(ob.location)
 
-        # setting the origin to cursor(which is on (0,0,0)), now the object origin matches blender's algorithm
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+    # offsetting the object on Z by the positive offset
+    offset = ob.dimensions[2]/4
+    ob.location = (0, 0, offset)
 
-        # restore object location and rotation
-        ob.location = save_location
-        ob.rotation_euler = saved_rot
+    # setting the origin to cursor(which is on (0,0,0)), now the object origin matches blender's algorithm
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
-        # and move it on local Z by the negative offset to restore the original location
-        bpy.ops.transform.translate(
-            value=(0, 0, -offset), orient_type='LOCAL')
+    # restore object location and rotation
+    ob.location = save_location
+    ob.rotation_euler = saved_rot
 
-        # restore cursor location
-        bpy.context.scene.cursor.location = cursor_loc
+    # and move it on local Z by the negative offset to restore the original location
+    bpy.ops.transform.translate(
+        value=(0, 0, -offset), orient_type='LOCAL')
 
-    return Vector(ob.location), Euler(ob.rotation_euler)
+    # restore cursor location
+    bpy.context.scene.cursor.location = cursor_loc
+
+    return Vector(ob.location), Euler(ob.rotation_euler), set_origin_to_cursor
 
 
 def rotate_around_axis_followed_by_euler_rotation(axis, axis_rotation, euler_rotation):
@@ -322,7 +342,7 @@ def is_cone_cylindrical(ob):
 
     # enter edit mode, fill faces if necessary
     bpy.ops.object.editmode_toggle()
-    was_filled, total_faces, difference = fill_face_if_non_manifold(ob)
+    was_filled, total_faces, difference = fill_face(ob)
     bm = bmesh.from_edit_mesh(ob.data)
 
     # initialize
@@ -420,7 +440,7 @@ def calculate_cone_radiuses(ob):
 
     # enter edit mode, fill faces if necessary
     bpy.ops.object.editmode_toggle()
-    was_filled, total_faces, difference = fill_face_if_non_manifold(ob)
+    was_filled, total_faces, difference = fill_face(ob)
     bm = bmesh.from_edit_mesh(ob.data)
 
     # initialize
@@ -930,7 +950,7 @@ def select_rotational_cylinder(ob):
     # change selection to faces
     bpy.context.tool_settings.mesh_select_mode = (False, False, True)
 
-    was_filled, total_faces, difference = fill_face_if_non_manifold(ob)
+    was_filled, total_faces, difference = fill_face(ob)
     bm = bmesh.from_edit_mesh(ob.data)
 
     # try to select ngons
@@ -990,7 +1010,7 @@ def select_rotational_cone(ob):
     # change selection to faces
     bpy.context.tool_settings.mesh_select_mode = (False, False, True)
 
-    was_filled, total_faces, difference = fill_face_if_non_manifold(ob)
+    was_filled, total_faces, difference = fill_face(ob)
     bm = bmesh.from_edit_mesh(ob.data)
 
     # try to select ngons
@@ -1187,7 +1207,7 @@ def insert_middle_face_torus(ob):
 # individual functions that replace the current mesh with a new one that looks the same-----------------------------------------------------------------
 
 
-def replace_circle(vertices, radius, cap_fill, location, rotation, align, b_UV):
+def replace_circle(vertices, radius, cap_fill, location, rotation, align, b_UV, set_origin_to_cursor: bool):
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1201,12 +1221,14 @@ def replace_circle(vertices, radius, cap_fill, location, rotation, align, b_UV):
 
     # new object reference
     new_ob = bpy.context.active_object
+    if set_origin_to_cursor:
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
     copy_modifiers_and_delete_original(
         original_ob, new_ob, original_ob.name)
 
 
-def replace_cone(vertices, radius1, radius2, depth, cap_fill, location, rotation, align, b_UV):
+def replace_cone(vertices, radius1, radius2, depth, cap_fill, location, rotation, align, b_UV, set_origin_to_cursor: bool):
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1222,12 +1244,14 @@ def replace_cone(vertices, radius1, radius2, depth, cap_fill, location, rotation
 
     # new object reference
     new_ob = bpy.context.active_object
+    if set_origin_to_cursor:
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
     copy_modifiers_and_delete_original(
         original_ob, new_ob, original_ob.name)
 
 
-def replace_cylinder(vertices, radius, depth, cap_fill, location, rotation, align, b_UV):
+def replace_cylinder(vertices, radius, depth, cap_fill, location, rotation, align, b_UV, set_origin_to_cursor: bool):
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1241,12 +1265,14 @@ def replace_cylinder(vertices, radius, depth, cap_fill, location, rotation, alig
 
     # new object reference
     new_ob = bpy.context.active_object
+    if set_origin_to_cursor:
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
     copy_modifiers_and_delete_original(
         original_ob, new_ob, original_ob.name)
 
 
-def replace_icosphere(subdivisions, radius, location, rotation, align, b_UV):
+def replace_icosphere(subdivisions, radius, location, rotation, align, b_UV, set_origin_to_cursor: bool):
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1260,12 +1286,14 @@ def replace_icosphere(subdivisions, radius, location, rotation, align, b_UV):
 
     # new object reference
     new_ob = bpy.context.active_object
+    if set_origin_to_cursor:
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
     copy_modifiers_and_delete_original(
         original_ob, new_ob, original_ob.name)
 
 
-def replace_torus(major_segments, minor_segments, major_radius, minor_radius, location, rotation, align, b_UV):
+def replace_torus(major_segments, minor_segments, major_radius, minor_radius, location, rotation, align, b_UV, set_origin_to_cursor: bool):
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1279,12 +1307,14 @@ def replace_torus(major_segments, minor_segments, major_radius, minor_radius, lo
 
     # new object reference
     new_ob = bpy.context.active_object
+    if set_origin_to_cursor:
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
     copy_modifiers_and_delete_original(
         original_ob, new_ob, original_ob.name)
 
 
-def replace_uv_sphere(segments, rings, radius, location, rotation, align, b_UV):
+def replace_uv_sphere(segments, rings, radius, location, rotation, align, b_UV, set_origin_to_cursor: bool):
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1298,6 +1328,8 @@ def replace_uv_sphere(segments, rings, radius, location, rotation, align, b_UV):
 
     # new object reference
     new_ob = bpy.context.active_object
+    if set_origin_to_cursor:
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
     copy_modifiers_and_delete_original(
         original_ob, new_ob, original_ob.name)

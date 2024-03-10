@@ -5,14 +5,16 @@
 [![GitHub issues](https://img.shields.io/github/issues/eXzacT/RePrimitive.svg)](https://GitHub.com/eXzacT/RePrimitive/issues/)
 [![GitHub license](https://img.shields.io/github/license/eXzacT/RePrimitive.svg)](https://github.com/eXzacT/RePrimitive/blob/main/LICENSE)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
-[![GitHub stars](https://img.shields.io/github/stars/eXzacT/RePrimitive.svg?style=social&label=Star&maxAge=2592000)](https://GitHub.com/eXzacT/RePrimitive/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/eXzacT/RePrimitive.svg?style=social&label=Star&maxAge=302400)](https://GitHub.com/eXzacT/RePrimitive/stargazers)
 [![Youtube](https://img.shields.io/youtube/channel/subscribers/UCm5Nt3WIh1i1z-QB7H3zzkQ?style=social)](https://www.youtube.com/channel/UCm5Nt3WIh1i1z-QB7H3zzkQ)
 [![Twitch](https://img.shields.io/twitch/status/exzact7?style=social)](https://www.twitch.tv/exzact7)
 
 RePrimitive is a blender addon that allows you to tweak primitive shapes at any point in time.<br />
+Objects keep their modifiers as you are changing the data presuming you didn't apply the modifier.
 It works despite the object location/rotation and it even works if they are applied. All this with a single action.<br />
 
 [Gumroad](https://exzact7.gumroad.com/l/reprimitive)  
+[Blender](https://blendermarket.com/products/reprimitive)
 [More info on youtube](https://www.youtube.com/watch?v=xmXLGlx7yl0&t=5s)
 
 [Installation](#installation) •

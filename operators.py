@@ -53,6 +53,7 @@ class RePrimitiveCircle(Operator):
     # create default values
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
+    set_origin_to_cursor = False
     Y = 0
     radius = 1
     vertices = 32
@@ -145,7 +146,7 @@ class RePrimitiveCircle(Operator):
             context.active_object, False)
 
         # save location and rotation
-        self.saved_object_location, self.saved_object_rotation = save_location_rotation(
+        self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = save_location_rotation(
             context.active_object)
         self.align = "WORLD"
 
@@ -160,11 +161,11 @@ class RePrimitiveCircle(Operator):
 
                 # set object rotation to cube rotation
                 self.saved_object_rotation = Euler(
-                    context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
+                    context.scene.objects["supersecretcube1234567890#"].rotation_euler)
                 context.active_object.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
-                cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
+                cube_to_delete = bpy.data.objects["supersecretcube1234567890#"]
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # calculate variables
@@ -222,7 +223,7 @@ class RePrimitiveCircle(Operator):
     def execute(self, context):
 
         replace_circle(self.vertices, self.radius, self.cap_fill,
-                       self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
+                       self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV, self.set_origin_to_cursor)
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -247,9 +248,9 @@ class RePrimitiveCone(Operator):
     execute_on_check = True
 
     # create default values
-    applied_rotation_and_location = False
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
+    set_origin_to_cursor = False
     Y = 0
     depth = 2
     radius1 = 1
@@ -355,48 +356,45 @@ class RePrimitiveCone(Operator):
         applied_rotation = False
         was_filled = False
 
+        ob = context.object
+
         # before any calculations are done we first hide modifiers in the viewport
-        modifiers_changed = show_or_hide_modifiers_in_viewport(
-            context.active_object, False)
+        modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
 
         # first we'll check if the rotation is (0,0,0) to skip the next check
-        if context.active_object.rotation_euler == Euler((0, 0, 0)):
-            # check if rotation is applied, because functions won't work
-            if check_if_wrong_cone_or_cylinder_rotation(context.active_object):
+        if ob.rotation_euler == Euler((0, 0, 0)):
+            # Is it really 0,0,0 or was it applied?
+            if check_if_wrong_cone_or_cylinder_rotation(ob):
 
                 applied_rotation = True
-                # if the location was possibly applied aswell then we have to fix it first
-                # usually we don't have to do this because we're doing the location first, but with cone we need to know the rotation first
-                # or we can't fix the location
-                if context.active_object.location == Vector((0, 0, 0)):
+                # In order to fix the location we first have to fix the rotation
+                if ob.location == Vector((0, 0, 0)):
 
                     # if cone is not manifold, origin to center of volume won't work, so we're filling in the face
                     bpy.ops.object.editmode_toggle()
-                    was_filled, total_faces, difference = fill_face_if_non_manifold(
-                        context.active_object)
+                    was_filled, total_faces, difference = fill_face(ob)
                     bpy.ops.object.editmode_toggle()
 
-                    bpy.ops.object.origin_set(
-                        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-                    self.applied_rotation_and_location = True
+                    # bpy.ops.object.origin_set(
+                    #     type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
 
                 # if the rotation was applied we fix it so it's truly (0,0,0)
                 bpy.ops.object.fix_applied_rotation_auto()
 
                 # the above function also spawns a cube that we use to reapply the rotation as it was before fixing but this time it won't be (0,0,0)
                 self.saved_object_rotation = Euler(
-                    context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
-                context.active_object.rotation_euler = self.saved_object_rotation
+                    context.scene.objects["supersecretcube1234567890#"].rotation_euler)
+                ob.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
-                cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
+                cube_to_delete = bpy.data.objects["supersecretcube1234567890#"]
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # if we added a cap, delete the last 2 or 1 depending on cone shape
         if was_filled:
 
             bpy.ops.object.editmode_toggle()
-            bm = bmesh.from_edit_mesh(context.active_object.data)
+            bm = bmesh.from_edit_mesh(ob.data)
             bm.faces.ensure_lookup_table()
             bm.faces[total_faces-1].select_set(True)
             if difference == 2:
@@ -406,7 +404,7 @@ class RePrimitiveCone(Operator):
             was_filled = False
 
         self.radius1, self.radius2 = calculate_cone_radiuses(
-            context.active_object)
+            ob)
 
         cylindrical = False
         if self.radius1 > 0 and self.radius2 > 0:
@@ -414,43 +412,35 @@ class RePrimitiveCone(Operator):
 
         # if the cone is cylindrical then we can use the usual function that uses origin to geometry
         if cylindrical:
-
-            if self.applied_rotation_and_location:
-                # in this case we already fixed the origin but it's wrong for cylindrical cones
-                bpy.ops.object.origin_set(
-                    type='ORIGIN_GEOMETRY', center='MEDIAN')
-
-            self.applied_rotation_and_location = False
-            self.saved_object_location, self.saved_object_rotation = save_location_rotation(
-                context.active_object)
+            self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = save_location_rotation(
+                ob)
 
         # if cone has a sharp tip, origin to geometry won't work so we do this instead
         else:
 
-            # if cone is not manifold origin to center of volume won't work, so we're filling in the face
-            if context.active_object.location == Vector((0, 0, 0)):
-                bpy.ops.object.editmode_toggle()
-                was_filled, total_faces, difference = fill_face_if_non_manifold(
-                    context.active_object)
-                bpy.ops.object.editmode_toggle()
+            # Non manifold cones have different center of volume compared to manifold, so we're filling the cap in
+            bpy.ops.object.editmode_toggle()
+            was_filled, total_faces, difference = fill_face(
+                ob)
+            bpy.ops.object.editmode_toggle()
 
             # look at https://drive.google.com/file/d/1dJnHe81WgO4eUJY4xyjoTFJi5n8h79we/view?usp=sharing
             # bottom radius is zero, so origin to center of volume is above where it should be which means when location is reset to (0,0,0) the object will be lower
             # so we're moving the object up
             if self.radius1 == 0:
-                self.saved_object_location, self.saved_object_rotation = fix_cone_origin_and_save_location_rotation_positive(
-                    context.active_object)
+                self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = fix_cone_origin_and_save_location_rotation_positive(
+                    ob)
 
             # top radius is zero, so origin to center of volume is below where it should be which means when location is reset to (0,0,0) the object will be higher
             # so we're moving the object down
             else:
-                self.saved_object_location, self.saved_object_rotation = fix_cone_origin_and_save_location_rotation_negative(
-                    context.active_object)
+                self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = fix_cone_origin_and_save_location_rotation_negative(
+                    ob)
 
         # if we added a cap, delete the last 2 or 1 depending on cone shape
         if was_filled:
             bpy.ops.object.editmode_toggle()
-            bm = bmesh.from_edit_mesh(context.active_object.data)
+            bm = bmesh.from_edit_mesh(ob.data)
             bm.faces.ensure_lookup_table()
             bm.faces[total_faces-1].select_set(True)
             if difference == 2:
@@ -460,24 +450,25 @@ class RePrimitiveCone(Operator):
 
         # calculate variables
         self.align = "WORLD"
-        self.Y = context.object.dimensions[1]
-        self.depth = context.object.dimensions[2]
-        if not context.object.data.uv_layers:
+        self.Y = ob.dimensions[1]
+        self.depth = ob.dimensions[2]
+        if not ob.data.uv_layers:
             self.b_UV = False
 
         # if both top and bottom radius are not zero we have to divide vertices with 2
         if cylindrical:
 
-            if len(context.object.data.polygons) == len(context.object.data.vertices)/2+2:
-                self.vertices = int(len(context.object.data.vertices)/2)
+            if len(ob.data.polygons) == len(ob.data.vertices)/2+2:
+                self.vertices = int(len(ob.data.vertices)/2)
                 self.cap_type = 'NGON'
 
-            elif len(context.object.data.polygons) == len(context.object.data.vertices)/2:
-                self.vertices = int(len(context.object.data.vertices)/2)
+            elif len(ob.data.polygons) == len(ob.data.vertices)/2:
+                self.vertices = int(len(ob.data.vertices)/2)
                 self.cap_type = 'NOTHING'
             else:
-                self.vertices = int(len(context.object.data.vertices)/2-1)
+                self.vertices = int(len(ob.data.vertices)/2-1)
                 self.cap_type = 'TRIFAN'
+
         elif self.radius1 == 0 and self.radius2 == 0:
 
             # special case for when both radiuses are 0, base fill type would change to triangle fan otherwise because there's only 3 verts
@@ -487,14 +478,14 @@ class RePrimitiveCone(Operator):
         # one side has radius 0
         else:
 
-            if len(context.object.data.polygons) == len(context.object.data.vertices):
-                self.vertices = int(len(context.object.data.vertices)-1)
+            if len(ob.data.polygons) == len(ob.data.vertices):
+                self.vertices = int(len(ob.data.vertices)-1)
                 self.cap_type = 'NGON'
-            elif len(context.object.data.polygons) == len(context.object.data.vertices)-1:
-                self.vertices = int(len(context.object.data.vertices)-1)
+            elif len(ob.data.polygons) == len(ob.data.vertices)-1:
+                self.vertices = int(len(ob.data.vertices)-1)
                 self.cap_type = 'NOTHING'
             else:
-                self.vertices = int(len(context.object.data.vertices)-2)
+                self.vertices = int(len(ob.data.vertices)-2)
                 self.cap_type = 'TRIFAN'
 
         # apply cap fill settings if they're different from the enum option drop
@@ -503,7 +494,7 @@ class RePrimitiveCone(Operator):
 
         # after we're done we unhide modifiers in the viewport if they weren't hidden
         if modifiers_changed:
-            show_or_hide_modifiers_in_viewport(context.active_object, True)
+            show_or_hide_modifiers_in_viewport(ob, True)
 
         # we don't have to fix the rotation if edges go through Y axis by default
         if applied_rotation and (self.vertices-2) % 4 != 0:
@@ -521,7 +512,7 @@ class RePrimitiveCone(Operator):
 
         # if the user invokes the operator but doesn't do anything and clicks away instead of pressing ok-> execute doesn't go off
         # we're force calling execute to fix the location and rotation
-        if applied_rotation or self.applied_rotation_and_location:
+        if applied_rotation:
             self.from_check = True
             self.execute(context)
 
@@ -536,14 +527,7 @@ class RePrimitiveCone(Operator):
     def execute(self, context):
 
         replace_cone(self.vertices, self.radius1, self.radius2, self.depth, self.cap_fill,
-                     self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
-
-        # fix the location if both rotation and location were applied
-        if self.applied_rotation_and_location:
-            bpy.ops.transform.translate(
-                value=(0, 0, -self.depth/4),
-                orient_type='LOCAL'
-            )
+                     self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV, self.set_origin_to_cursor)
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -570,6 +554,7 @@ class RePrimitiveCylinder(Operator):
     # create default values
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
+    set_origin_to_cursor = False
     Y = 0
     depth = 2
     radius = 1
@@ -667,8 +652,9 @@ class RePrimitiveCylinder(Operator):
             context.active_object, False)
 
         # save location and rotation
-        self.saved_object_location, self.saved_object_rotation = save_location_rotation(
+        self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = save_location_rotation(
             context.active_object)
+
         self.align = "WORLD"
 
         # first we'll check if the rotation is (0,0,0) to skip the next check
@@ -682,11 +668,11 @@ class RePrimitiveCylinder(Operator):
                 bpy.ops.object.fix_applied_rotation_auto()
 
                 self.saved_object_rotation = Euler(
-                    context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
+                    context.scene.objects["supersecretcube1234567890#"].rotation_euler)
                 context.active_object.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
-                cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
+                cube_to_delete = bpy.data.objects["supersecretcube1234567890#"]
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # calculate variables
@@ -746,7 +732,7 @@ class RePrimitiveCylinder(Operator):
     def execute(self, context):
 
         replace_cylinder(self.vertices, self.radius, self.depth, self.cap_fill, self.saved_object_location, self.saved_object_rotation,
-                         self.align, self.b_UV)
+                         self.align, self.b_UV, self.set_origin_to_cursor)
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -773,6 +759,7 @@ class RePrimitiveIcoSphere(Operator):
     # create default values
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
+    set_origin_to_cursor = False
 
     subdivisions = 2
     radius = 1
@@ -855,7 +842,7 @@ class RePrimitiveIcoSphere(Operator):
             context.active_object, False)
 
         # save location and rotation
-        self.saved_object_location, self.saved_object_rotation = save_location_rotation(
+        self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = save_location_rotation(
             context.active_object)
         self.align = "WORLD"
 
@@ -870,11 +857,11 @@ class RePrimitiveIcoSphere(Operator):
 
                 # the above function also spawns a cube that we use to reapply the rotation as it was before fixing but this time it won't be (0,0,0)
                 self.saved_object_rotation = Euler(
-                    context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
+                    context.scene.objects["supersecretcube1234567890#"].rotation_euler)
                 # context.active_object.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
-                cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
+                cube_to_delete = bpy.data.objects["supersecretcube1234567890#"]
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # calculate variables
@@ -911,7 +898,7 @@ class RePrimitiveIcoSphere(Operator):
     def execute(self, context):
 
         replace_icosphere(self.subdivisions, self.radius, self.saved_object_location,
-                          self.saved_object_rotation, self.align, self.b_UV)
+                          self.saved_object_rotation, self.align, self.b_UV, self.set_origin_to_cursor)
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -938,6 +925,7 @@ class RePrimitiveTorus(Operator):
     # create default values
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
+    set_origin_to_cursor = False
 
     major_segments = 48
     minor_segments = 12
@@ -1039,7 +1027,7 @@ class RePrimitiveTorus(Operator):
             context.active_object, False)
 
         # save location and rotation
-        self.saved_object_location, self.saved_object_rotation = save_location_rotation(
+        self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = save_location_rotation(
             context.active_object)
         self.align = "WORLD"
 
@@ -1054,11 +1042,11 @@ class RePrimitiveTorus(Operator):
 
                 # the above function also spawns a cube that we use to reapply the rotation as it was before fixing but this time it won't be (0,0,0)
                 self.saved_object_rotation = Euler(
-                    context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
+                    context.scene.objects["supersecretcube1234567890#"].rotation_euler)
                 context.active_object.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
-                cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
+                cube_to_delete = bpy.data.objects["supersecretcube1234567890#"]
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # calculate variables
@@ -1126,7 +1114,7 @@ class RePrimitiveTorus(Operator):
     def execute(self, context):
 
         replace_torus(self.major_segments, self.minor_segments, self.major_radius, self.minor_radius,
-                      self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
+                      self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV, self.set_origin_to_cursor)
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -1153,6 +1141,7 @@ class RePrimitiveUVSphere(Operator):
     # create default values
     saved_object_location = Vector((0, 0, 0))
     saved_object_rotation = Euler((0, 0, 0))
+    set_origin_to_cursor = False
 
     segments = 32
     rings = 16
@@ -1248,7 +1237,7 @@ class RePrimitiveUVSphere(Operator):
             context.active_object, False)
 
         # save location and rotation
-        self.saved_object_location, self.saved_object_rotation = save_location_rotation(
+        self.saved_object_location, self.saved_object_rotation, self.set_origin_to_cursor = save_location_rotation(
             context.active_object)
         self.align = "WORLD"
 
@@ -1263,11 +1252,11 @@ class RePrimitiveUVSphere(Operator):
 
                 # the above function also spawns a cube that we use to reapply the rotation as it was before fixing but this time it won't be (0,0,0)
                 self.saved_object_rotation = Euler(
-                    context.scene.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"].rotation_euler)
+                    context.scene.objects["supersecretcube1234567890#"].rotation_euler)
                 context.active_object.rotation_euler = self.saved_object_rotation
 
                 # delete the super secret cube
-                cube_to_delete = bpy.data.objects["if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"]
+                cube_to_delete = bpy.data.objects["supersecretcube1234567890#"]
                 bpy.data.objects.remove(cube_to_delete, do_unlink=True)
 
         # calculate variables
@@ -1313,7 +1302,7 @@ class RePrimitiveUVSphere(Operator):
     def execute(self, context):
 
         replace_uv_sphere(self.segments, self.rings, self.radius,
-                          self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV)
+                          self.saved_object_location, self.saved_object_rotation, self.align, self.b_UV, self.set_origin_to_cursor)
 
         # if execute was ran from check function set to false so execute can run from there again
         if self.from_check:
@@ -1400,7 +1389,7 @@ class FixAppliedRotationAuto(Operator):
         # and 2-> to restore original object rotation to how it was before applied
         # cube number 2, we use this one outside of the operator since there's no way to return values from operator
         bpy.ops.mesh.primitive_cube_add(location=saved_location, align='VIEW')
-        context.active_object.name = "if_you==girl_AND_you==READING_THIS_AND_you==SINGLE_THEN_DM_ME"
+        context.active_object.name = "supersecretcube1234567890#"
 
         # cube number 1, we use this one in this operator
         bpy.ops.mesh.primitive_cube_add(location=saved_location, align='VIEW')
@@ -1481,7 +1470,7 @@ class FixAppliedRotation(Operator):
 
             # if cone is not manifold, origin to center of volume won't work, so we're filling in the face
             bpy.ops.object.editmode_toggle()
-            was_filled, total_faces, difference = fill_face_if_non_manifold(
+            was_filled, total_faces, difference = fill_face(
                 context.active_object)
             bpy.ops.object.editmode_toggle()
 
@@ -1493,7 +1482,7 @@ class FixAppliedRotation(Operator):
         else:
 
             # save object location, we don't actually need the rotation, this also fixes the location if it was applied
-            saved_location, saved_rotation = save_location_rotation(ob)
+            saved_location, _ = save_location_rotation(ob)
             # set the location to 0 so some of the smart selection that compares to the (0,0,0) Vector would work
             # i could change the functions so they work regardless but they're simpler this way
             ob.location = (0, 0, 0)
@@ -1616,7 +1605,7 @@ class FixAppliedRotation(Operator):
                     type='ORIGIN_GEOMETRY', center='MEDIAN')
 
                 cone_loc_applied = False
-                saved_location, saved_rotation = save_location_rotation(
+                saved_location, _ = save_location_rotation(
                     ob)
 
             # if cone has a sharp tip origin to geometry won't work so we do this instead
@@ -1624,7 +1613,7 @@ class FixAppliedRotation(Operator):
                 # function will simply return object rotation and location without fixing if location isn't (0,0,0) so we're applying location to force call
                 bpy.ops.object.transform_apply(
                     location=True, rotation=False, scale=False)
-                saved_location, saved_rotation = fix_cone_origin_and_save_location_rotation_positive(
+                saved_location, _ = fix_cone_origin_and_save_location_rotation_positive(
                     context.active_object)
 
         # restore original location
@@ -1646,8 +1635,3 @@ class FixAppliedRotation(Operator):
             ob.rotation_euler = (0, 0, 0)
 
         return {'FINISHED'}
-
-# 01000001 01101100 01110011 01101111 00101100 00100000 01101101 01100001 01110011 01110011 00100000 01100101 01100110
-# 01100110 01100101 01100011 01110100 00100000 01101001 01110011 00100000 01110100 01101000 01100101 00100000 01100111
-# 01110010 01100101 01100001 01110100 01100101 01110011 01110100 00100000 01100111 01100001 01101101 01100101 00100000
-# 01101111 01100110 00100000 01100001 01101100 01101100 00100000 01110100 01101001 01101101 01100101
