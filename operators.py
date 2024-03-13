@@ -1456,47 +1456,27 @@ class FixAppliedRotation(Operator):
         # save original object ref and name
         ob = context.active_object
         saved_name = ob.name
-        cone_loc_applied = False
-        was_filled = False
-        changed_mode = False
+        is_cone = ob.data.name.startswith(localization_cone)
 
         # if in edit mode enter object mode
         if context.mode == 'EDIT_MESH':
-            changed_mode = True
             bpy.ops.object.editmode_toggle()
 
-        # cone requires a specific function if location was applied because origin to geometry doesn't work in every case
-        if ob.data.name.startswith(localization_cone) and ob.location == Vector((0, 0, 0)):
-
-            # if cone is not manifold, origin to center of volume won't work, so we're filling in the face
-            bpy.ops.object.editmode_toggle()
-            was_filled, total_faces, difference = fill_face(
-                context.active_object)
-            bpy.ops.object.editmode_toggle()
-
+        saved_location, _, set_origin_to_cursor = save_location_rotation(ob)
+        if is_cone:
             bpy.ops.object.origin_set(
                 type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-            cone_loc_applied = True
-            saved_location = ob.location
+            saved_location = Vector(ob.location)
 
-        else:
-
-            # save object location, we don't actually need the rotation, this also fixes the location if it was applied
-            saved_location, _ = save_location_rotation(ob)
-            # set the location to 0 so some of the smart selection that compares to the (0,0,0) Vector would work
-            # i could change the functions so they work regardless but they're simpler this way
-            ob.location = (0, 0, 0)
-
-        # if we changed the mode from edit swap it back
-        if changed_mode:
-            bpy.ops.object.editmode_toggle()
+        # set the location to 0 so some of the smart selection that compares to the (0,0,0) Vector would work
+        # i could change the functions so they work regardless but they're simpler this way
+        ob.location = (0, 0, 0)
 
         # save view
         rv = context.space_data.region_3d
         matrix = rv.view_matrix
 
-        # if user ran the operator from object mode use smart selection
-        # only works for simple objects
+        # User ran from object mode, use smart selection
         if context.mode == 'OBJECT':
 
             # enter edit mode and deselect everything
@@ -1509,129 +1489,101 @@ class FixAppliedRotation(Operator):
             # use smart selection
             smart_selection(context.active_object)
 
-        # if user ran the operator from edit mode we don't calculate selection and rather use what user selected
-        # unless he selected nothing then we use smart selection just like in object mode
+        # Ran from edit mode
         elif context.mode == 'EDIT_MESH':
 
-            # check if nothing is selected
+            # Is nothing selected? Use smart selection
             if len([v for v in context.active_object.data.vertices if v.select]) == 0:
-
-                # use smart selection
                 smart_selection(context.active_object)
 
-            # check if more than 2 faces are selected
+            # Are more than 2 faces selected ?
             elif len([f for f in context.active_object.data.polygons if f.select]) > 1:
-
                 bpy.ops.mesh.duplicate()
                 bpy.ops.transform.resize(value=(1, 1, 0), orient_type='NORMAL')
                 bpy.ops.mesh.dissolve_edges()
 
-                # align view to the selected faces and delete the face after
+                # Align view to the selected faces and delete the face after
                 bpy.ops.view3d.view_axis(type='TOP', align_active=True)
                 bpy.ops.mesh.delete(type='EDGE')
 
-            # otherwise just align to selection(1 vert,edge,face, etc)
+            # Use whatever is selected
             else:
                 bpy.ops.view3d.view_axis(type='TOP', align_active=True)
 
-        # deselect all faces and return to object mode
+        # Deselect all faces and return to object mode
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.editmode_toggle()
 
-        # add a cube that's aligned to view, this way we get the objects true rotation
+        # Add a cube that's aligned to view, this way we get the objects true rotation
         bpy.ops.mesh.primitive_cube_add(location=saved_location, align='VIEW')
         cube = context.active_object
-
-        # save the cube rotation, we only use this for special cases when both location was applied and the object in question is a cone with a sharp tip
+        # save the cube rotation, we only use this for cones
         cube_saved_rot = Euler(cube.rotation_euler)
 
-        # deselect everything and select original object, followed by the cube
+        # Deselect everything and select original object, followed by the cube
         bpy.ops.object.select_all(action='DESELECT')
         ob.select_set(True)
         cube.select_set(True)
 
-        # parent object to cube
+        # Parent object to cube
         bpy.ops.object.parent_set(type='OBJECT', keep_transform=False)
 
-        # deselect everything again and select the cube
+        # Deselect everything again and select the cube, then clear the objects rotation
         bpy.ops.object.select_all(action='DESELECT')
         cube.select_set(True)
-
-        # reset rotation of the cube
         bpy.ops.object.rotation_clear(clear_delta=False)
 
-        # deselect everything again and select the original object
+        # Deselect everything again and select the original object
         bpy.ops.object.select_all(action='DESELECT')
         ob.select_set(True)
 
-        # clear parent and keep transform, after that apply the rotation
+        # Clear parent and keep transform, after that apply the rotation
         bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
         bpy.ops.object.transform_apply(
             location=False, rotation=True, scale=False)
 
-        # deselect everything, select the cube and delete it
+        # Deselect everything, select the cube and delete it
         bpy.ops.object.select_all(action='DESELECT')
         cube.select_set(True)
         bpy.ops.object.delete()
 
-        # restore saved view and reselect the original object
+        # Restore saved view and reselect the original object
         rv.view_perspective = 'PERSP'
         rv.view_matrix = matrix
         context.scene.objects[saved_name].select_set(True)
         context.view_layer.objects.active = ob
 
-        # if the object was cone and the location was applied
-        if cone_loc_applied:
-
-            # if we added a cap, delete the last 2 or 1 depending on cone shape
-            if was_filled:
-
-                bpy.ops.object.editmode_toggle()
-                bm = bmesh.from_edit_mesh(ob.data)
-                bm.faces.ensure_lookup_table()
-                bm.faces[total_faces-1].select_set(True)
-                if difference == 2:
-                    bm.faces[total_faces-2].select_set(True)
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.editmode_toggle()
-
+        if is_cone:
+            # We don't have to fix anything for cylindrical cone since origin to volume works
             cylindrical = is_cone_cylindrical(ob)
+            if not cylindrical:
 
-            # if the cone is cylindrical then we can use the usual function that uses origin to geometry
-            if cylindrical:
+                # Get the previously saved location(the one after setting origin to volume)
+                ob.location = saved_location
 
-                # we already fixed the origin but it's wrong for cylindrical cones
-                bpy.ops.object.origin_set(
-                    type='ORIGIN_GEOMETRY', center='MEDIAN')
-
-                cone_loc_applied = False
-                saved_location, _ = save_location_rotation(
+                # Move the cone along local Z axis in a negative direction by the amount we offset when we set the origin to volume
+                ob.rotation_euler = cube_saved_rot
+                bpy.ops.transform.translate(
+                    value=(0, 0, -ob.dimensions[2]/4), orient_type='LOCAL')
+                # Now we can reset rotation since we don't care about it anymore
+                ob.rotation_euler = (0, 0, 0)
+                saved_location, _, _ = fix_cone_origin_and_save_location_rotation_positive(
                     ob)
 
-            # if cone has a sharp tip origin to geometry won't work so we do this instead
-            else:
-                # function will simply return object rotation and location without fixing if location isn't (0,0,0) so we're applying location to force call
-                bpy.ops.object.transform_apply(
-                    location=True, rotation=False, scale=False)
-                saved_location, _ = fix_cone_origin_and_save_location_rotation_positive(
-                    context.active_object)
+                # After fixing the origin, to get the original location we have to add the offset again
+                ob.location = saved_location
+                ob.location[2] += ob.dimensions[2]/4
 
-        # restore original location
-        ob.location = saved_location
+        else:
+            # restore original location
+            ob.location = saved_location
 
         # fix the rotation on Z axis so it matches blender default and apply rotation again
         Z_offset_ob(ob)
         bpy.ops.object.transform_apply(
             location=False, rotation=True, scale=False)
 
-        # offset location on both local and global Z if both rotation and location were applied and the object was a sharp tip cone
-        if cone_loc_applied:
-
-            ob.rotation_euler = cube_saved_rot
-            bpy.ops.transform.translate(
-                value=(0, 0, ob.dimensions[2]/4), orient_type='GLOBAL')
-            bpy.ops.transform.translate(
-                value=(0, 0, -ob.dimensions[2]/4), orient_type='LOCAL')
-            ob.rotation_euler = (0, 0, 0)
+        if set_origin_to_cursor:
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
 
         return {'FINISHED'}

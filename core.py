@@ -7,17 +7,24 @@ from mathutils import Vector, Euler, Quaternion
 
 def distance_vec(point1: Vector, point2: Vector) -> float:
     """
-    return distance between two vectors
+    Returns distance between two vectors
     """
 
     return (point2 - point1).length
 
 
-def compare_vec(point1: Vector, point2: Vector):
+def compare_coords(c1: int, c2: int, tolerance=1e-5) -> bool:
+    """
+    Compares whether two coords are basically the same
+    """
+
+    return abs(c1-c2) < tolerance
+
+
+def compare_vec(point1: Vector, point2: Vector, tolerance=1e-5):
     """
     Compares whether two vectors are basically the same
     """
-    tolerance = 1e-6
     return distance_vec(point1, point2) < tolerance
 
 
@@ -205,7 +212,6 @@ def fix_cone_origin_and_save_location_rotation_positive(ob):
 
     bpy.context.scene.cursor.location = (0, 0, 0)
 
-    # setting origin to center of volume, this offsets the usual origin when the object is first made so we have to tweak it to match the original
     bpy.ops.object.origin_set(
         type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
     save_location = Vector(ob.location)
@@ -455,61 +461,52 @@ def calculate_cone_radiuses(ob):
         current_vert = v.co
         # only do this at the start of the loop, remember the first vert, we'll decide whether it's part of top or bottom in the next part
         if i == 0:
-            temp_vert_Z = round(current_vert[2], 5)
             temp_vert = current_vert
+            temp_vert_Z = current_vert.z
             i += 1
             continue
 
         if i == 1:
             # if the second vert has bigger Z value than the temp_vert we'll assign temp vert as top one
-            if round(current_vert[2], 5) < temp_vert_Z:
-
-                points_top.append(temp_vert)
-                top_vert = round(temp_vert[2], 5)
-                # also append the current vert to bottom
-                points_bottom.append(current_vert)
+            if not compare_coords(current_vert.z, temp_vert_Z):
+                if current_vert.z < temp_vert_Z:
+                    points_top.append(temp_vert)
+                    top_vert = temp_vert_Z
+                    points_bottom.append(current_vert)
+                else:
+                    points_top.append(current_vert)
+                    top_vert = current_vert[2]
+                    points_bottom.append(temp_vert)
 
             # if the second vert Z value is same as the first vert we found then it means the other side has only 1 vert, this is just how blender orders verts
             # example [(0,0,-1),(0,1,-1),.............,(0,1,1)]
-            elif round(current_vert[2], 5) == temp_vert_Z:
-
+            else:
                 points_top.append(current_vert)
                 points_top.append(temp_vert)
                 top_vert = temp_vert_Z
 
                 # adding the last vert because we're breaking the loop here
                 bm.verts.ensure_lookup_table()
-                last_vert = bm.verts[len(bm.verts)-1]
-                points_bottom.append(last_vert.co)
+                last_vert = bm.verts[-1].co
+                points_bottom.append(last_vert)
+
                 # also switching the arrays if necessary
-                if round(last_vert.co[2], 5) > temp_vert_Z:
-                    top_vert = round(last_vert.co[2], 5)
-                    temp_array = points_top
-                    points_top = points_bottom
-                    points_bottom = temp_array
+                if last_vert.z > temp_vert_Z + 1e-5:
+                    top_vert = last_vert.z
+                    points_top, points_bottom = points_bottom, points_top
                 break
 
-            # otherwise do the opposite from the first if
-            else:
-
-                points_top.append(current_vert)
-                top_vert = round(current_vert[2], 5)
-                # also append the temp vert to bottom
-                points_bottom.append(temp_vert)
             i += 1
-            continue
 
-        # if the current vert Z axis value is same as the one we initialized as top -> append it to top_points
-        if round(current_vert[2], 5) == top_vert:
-            points_top.append(current_vert)
-
-        # otherwise append it to bottom
         else:
-            points_bottom.append(current_vert)
+            if compare_coords(current_vert[2], top_vert):
+                points_top.append(current_vert)
+            else:
+                points_bottom.append(current_vert)
 
-        # if we found more than 1 for each side then we can just exit
-        if len(points_bottom) > 1 and len(points_top) > 1:
-            break
+            # if we found more than 1 for each side then we can just exit
+            if len(points_bottom) > 1 and len(points_top) > 1:
+                break
 
     # CASE 1 -> Cone has two sides, no tip-------------------------------------------------------------------------
     if len(points_bottom) > 1 and len(points_top) > 1:
