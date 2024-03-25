@@ -1,34 +1,33 @@
+from collections import defaultdict
+from itertools import chain
 import bpy
 import bmesh
 from .localization import *
 from math import cos, pi
 from mathutils import Vector, Euler, Quaternion
 
+TOLERANCE = 1e-5
 
-def distance_vec(point1: Vector, point2: Vector) -> float:
-    """
-    Returns distance between two vectors
-    """
 
+def vector_distance(point1: Vector, point2: Vector) -> float:
     return (point2 - point1).length
 
 
-def compare_coords(c1: int, c2: int, tolerance=1e-5) -> bool:
-    """
-    Compares whether two coords are basically the same
-    """
-
-    return abs(c1-c2) < tolerance
+def vectors_are_same(point1: Vector, point2: Vector) -> bool:
+    """ Check if two vectors are the same within a certain tolerance """
+    return vector_distance(point1, point2) <= TOLERANCE
 
 
-def compare_vec(point1: Vector, point2: Vector, tolerance=1e-5):
-    """
-    Compares whether two vectors are basically the same
-    """
-    return distance_vec(point1, point2) < tolerance
+def float_distance(c1: Vector, c2: Vector) -> float:
+    return abs(c1 - c2)
 
 
-def save_reset_and_apply_transforms(ob):
+def floats_are_same(c1: float, c2: float) -> bool:
+    """ Check if two floats are the same within a certain tolerance """
+    return float_distance(c1, c2) <= TOLERANCE
+
+
+def save_and_reset_transforms(ob: bpy.types.Object) -> tuple[Vector, Euler]:
 
     saved_loc = Vector(ob.location)
     saved_rot = Euler(ob.rotation_euler)
@@ -39,14 +38,12 @@ def save_reset_and_apply_transforms(ob):
     return saved_loc, saved_rot
 
 
-def fill_face(ob):
+def fill_face(ob: bpy.types.Object) -> tuple[bool, int, int]:
 
-    was_filled = False
     difference = 0
-    # count number of current faces
-    current_polygons = len(ob.data.polygons)
+    count = len(ob.data.polygons)
 
-    # select everything and add faces in case the object has no cap(nothing will happen if it already has them)
+    # Select everything and add faces in case the object has no cap(nothing will happen if it already has them)
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.fill_holes(sides=0)
     bpy.ops.mesh.select_all(action='DESELECT')
@@ -54,201 +51,142 @@ def fill_face(ob):
     bpy.ops.object.editmode_toggle()
     bpy.ops.object.editmode_toggle()
 
-    new_polygons = len(ob.data.polygons)
-    # if the new count of faces is different it means we filled in a face
-    if new_polygons != current_polygons:
-        was_filled = True
-        difference = new_polygons-current_polygons
+    new_count = len(ob.data.polygons)
+    difference = new_count - count
 
-    return was_filled, new_polygons, difference
+    # Did we fill a face?
+    return difference > 0, new_count, difference
 
 
-def calculate_circle_radius(ob):
-    """
-    calculate and return circle radius
-    """
+def calculate_circle_radius(ob: bpy.types.Object) -> int:
 
-    # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
+    saved_loc, saved_rot = save_and_reset_transforms(ob)
 
     bm = bmesh.new()
     bm.from_mesh(ob.data)
     bm.verts.ensure_lookup_table()
 
-    # second because if the fill type is TRIFAN then there will be an extra vertex in the middle and it's the first one
-    temp_vert = bm.verts[1].co
-    radius = distance_vec(Vector((0, 0, 0)), temp_vert)
+    # Second because if the fill type is TRIFAN then there will be an extra vertex in the middle and it's at [0]th position
+    V = bm.verts[1].co
+    radius = vector_distance(Vector((0, 0, 0)), V)
 
-    # return to original rotation rotation
+    # Return to original rotation rotation
+    bm.free()
     ob.location = saved_loc
     ob.rotation_euler = saved_rot
-    bm.free()
 
     return radius
 
 
-def calculate_polygon_radius(vertices, tip_vertex, neighbour_vertex):
+def calculate_polygon_radius(vertices: int, tip_vertex: Vector, neighbour_vertex: Vector) -> int:
     """
-    calculate and return polygon radius, used for torus and cone
-    look at https://drive.google.com/file/d/1azAUlG_XHxRG6XNy6xukxYQXmLwCqx1y/view?usp=sharing
+    Look at https://drive.google.com/file/d/1azAUlG_XHxRG6XNy6xukxYQXmLwCqx1y/view?usp=sharing
     """
 
     c = 2*pi/vertices
     a = (pi-c)/2
     B_angle_1 = pi/2-a
-    AB = distance_vec(tip_vertex, neighbour_vertex)
+    AB = vector_distance(tip_vertex, neighbour_vertex)
     BD = AB*cos(B_angle_1)
     B_angle_2 = pi/2-c
     BC = BD/cos(B_angle_2)
-    radius = BC
 
-    return radius
+    return BC
 
 
-def find_tip_and_neighbour_vert(ob):
+def find_tip_and_neighbour_vert(ob: bpy.types.Object) -> tuple[Vector, Vector]:
     """
-    returns the furthest vertex from the middle and the one above it
-    look at https://drive.google.com/file/d/1vxOz5l6AhCBY4ArNSKlRR037CkDBoPA8/view?usp=sharing
+    Returns the furthest vertex from the middle and the one above it
+    Look at https://drive.google.com/file/d/1vxOz5l6AhCBY4ArNSKlRR037CkDBoPA8/view?usp=sharing
     """
 
     bm = bmesh.new()
     bm.from_mesh(ob.data)
     bm.verts.ensure_lookup_table()
 
-    # blender is smart so first two verts are actually exactly what we need
+    # Blender always orders these in exactly the way we need, so we can just get first and second
     tip_vert = bm.verts[0].co
     neighbour_vert = bm.verts[1].co
 
     return tip_vert, neighbour_vert
 
 
-def save_location_rotation(ob):
-    """
-    Returns the true location and (possibly true) rotation of an object, at this point we can't know about the true rotation
-    """
-    cursor_loc = Vector(bpy.context.scene.cursor.location)
-    ob_loc = Vector(ob.location)
+def save_location_rotation(ob: bpy.types.Object) -> tuple[Vector, Euler, int]:
+    """ Returns the true location and (possibly true) rotation of an object, at this point we can't be certain if the object is rotated, what matters is that we fix the location """
 
-    # Is the origin set to cursor?
-    set_origin_to_cursor = False
-    if (ob_loc-cursor_loc).length < 1e-5:
-        set_origin_to_cursor = True
-
+    # Save origin before changing it
+    origin = Vector(ob.matrix_world.translation)
     bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
 
-    return Vector(ob.location), Euler(ob.rotation_euler), set_origin_to_cursor
+    return Vector(ob.matrix_world.translation), Euler(ob.rotation_euler), origin
 
 
-def fix_cone_origin_and_save_location_rotation_negative(ob):
-    """
-    used specifically for cone to prevent location issues because origin to geometry doesn't work well with 1 sided cones so we have to fix it
-    outdated, have to make a new picture->look at https://drive.google.com/file/d/1tn1tpJ6c1lfMBvkmYQAhpQPUxnCknAI5/view?usp=sharing
-    """
+def fix_cone_origin_and_save_location_rotation(ob: bpy.types.Object, applied_rotation: bool) -> tuple[Vector, Euler, int]:
+    """ Returns the true location and (possibly true) rotation of an object, at this point we can't be certain if the object is rotated, what matters is that we fix the location """
 
-    # Check whether the origin is set to cursor, so we know whether to set it back to cursor later
-    ob_loc = Vector(ob.location)
-    cursor_loc = Vector(bpy.context.scene.cursor.location)
-    set_origin_to_cursor = False
-    if (ob_loc-cursor_loc).length < 1e-5:
-        set_origin_to_cursor = True
+    # If the rotation was applied then at this point object is upside down so we move it
+    shift_value = -ob.dimensions.z/4 if applied_rotation else ob.dimensions.z/4
 
-    # set origin to generate a location for the object in case the location isn't true (0,0,0) but rather applied
-    bpy.ops.object.origin_set(
-        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
+    # Save origin before changing it
+    origin = Vector(ob.matrix_world.translation)
 
-    # saving the rotation and setting it to 0 so the object would be moved on Z axis properly
+    # Fill in the missing faces so origin to center of volume would work for any type of cone
+    bpy.ops.object.editmode_toggle()
+    was_filled, total_faces, difference = fill_face(ob)
+    bpy.ops.object.editmode_toggle()
+
+    # Save the original location and rotation
+    bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
     saved_rot = Euler(ob.rotation_euler)
-    ob.rotation_euler = (0, 0, 0)
+    saved_loc = Vector(ob.matrix_world.translation)
 
-    bpy.context.scene.cursor.location = (0, 0, 0)
-
-    # setting origin to center of volume, this offsets the usual origin when the object is first made so we have to tweak it to match the original
-    bpy.ops.object.origin_set(
-        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-    save_location = Vector(ob.location)
-
-    # offsetting the object on Z by the negative offset
-    offset = ob.dimensions[2]/4
-    ob.location = (0, 0, -offset)
-
-    # setting the origin to cursor(which is on (0,0,0)), now the object origin matches blender's algorithm
-    bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    # restore object location and rotation
-    ob.location = save_location
-    ob.rotation_euler = saved_rot
-
-    # and move it on local Z by the positive offset to restore the original location
-    bpy.ops.transform.translate(
-        value=(0, 0, offset), orient_type='LOCAL')
-
-    # restore cursor location
-    bpy.context.scene.cursor.location = cursor_loc
-
-    return Vector(ob.location), Euler(ob.rotation_euler), set_origin_to_cursor
-
-
-def fix_cone_origin_and_save_location_rotation_positive(ob):
-    """
-    same as above except we're moving the object upwards
-    this is because the cone is flipped by 180 degrees on Y so we have to move it in the opposite direction
-    """
-
-    # Check whether the origin is set to cursor, so we know whether to set it back to cursor later
-    ob_loc = Vector(ob.location)
+    # Reset object location rotation then move the cursor where the cone origin should be and apply origin
     cursor_loc = Vector(bpy.context.scene.cursor.location)
-
-    set_origin_to_cursor = False
-    if (ob_loc-cursor_loc).length < 1e-5:
-        set_origin_to_cursor = True
-
-    # set origin to generate a location for the object in case the location isn't true (0,0,0) but rather applied
-    bpy.ops.object.origin_set(
-        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-
-    # saving the rotation and setting it to 0 so the object would be moved on Z axis properly
-    saved_rot = Euler(ob.rotation_euler)
     ob.rotation_euler = (0, 0, 0)
-
-    bpy.context.scene.cursor.location = (0, 0, 0)
-
-    bpy.ops.object.origin_set(
-        type='ORIGIN_CENTER_OF_VOLUME', center='MEDIAN')
-    save_location = Vector(ob.location)
-
-    # offsetting the object on Z by the positive offset
-    offset = ob.dimensions[2]/4
-    ob.location = (0, 0, offset)
-
-    # setting the origin to cursor(which is on (0,0,0)), now the object origin matches blender's algorithm
+    ob.location = (0, 0, 0)
+    bpy.context.scene.cursor.location = (0, 0, shift_value)
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+    bpy.context.scene.cursor.location = cursor_loc  # Restore cursor location
 
-    # restore object location and rotation
-    ob.location = save_location
+    # if we filled in a face delete it
+    if was_filled:
+
+        bpy.ops.object.editmode_toggle()
+        bm = bmesh.from_edit_mesh(ob.data)
+
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bm.faces.ensure_lookup_table()
+        bm.faces[total_faces-1].select_set(True)
+
+        # if we added 2 faces select the other one aswell
+        if difference == 2:
+            bm.faces[total_faces-2].select_set(True)
+        bpy.ops.mesh.delete(type='FACE')
+
+        bpy.ops.object.editmode_toggle()
+
+    # Restore original object rotation and location, but because we moved the origin we have to move the object on local Z for the object to be at the same spot it was when its origin was broken
+    ob.location = saved_loc
     ob.rotation_euler = saved_rot
-
-    # and move it on local Z by the negative offset to restore the original location
     bpy.ops.transform.translate(
-        value=(0, 0, -offset), orient_type='LOCAL')
+        value=(0, 0, shift_value), orient_type='LOCAL')
 
-    # restore cursor location
-    bpy.context.scene.cursor.location = cursor_loc
-
-    return Vector(ob.location), Euler(ob.rotation_euler), set_origin_to_cursor
+    return Vector(ob.matrix_world.translation), saved_rot, origin
 
 
-def rotate_around_axis_followed_by_euler_rotation(axis, axis_rotation, euler_rotation):
-    '''
-    used to calculate final rotation done in 2 steps, first rotating on given axis by given radians and then rotating on all three axes,
-    we need this to offset the rotation done by the fix rotation operator
-    '''
+def rotate_around_axis_followed_by_euler_rotation(axis: str, angle: float, euler_rotation: Euler) -> Euler:
+    """
+    Used to calculate final rotation and done in 2 steps:
+        1. First rotating on given axis by given angle
+        2. Then rotating on all three axes
+    """
 
     if axis == 'Z':
-        quat1 = Quaternion((0, 0, 1), axis_rotation)
+        quat1 = Quaternion((0, 0, 1), angle)
     elif axis == 'X':
-        quat1 = Quaternion((1, 0, 0), axis_rotation)
+        quat1 = Quaternion((1, 0, 0), angle)
     else:
-        quat1 = Quaternion((0, 1, 0), axis_rotation)
+        quat1 = Quaternion((0, 1, 0), angle)
 
     quat2 = euler_rotation.to_quaternion()
     quat_outer_product = quat2 @ quat1
@@ -256,47 +194,44 @@ def rotate_around_axis_followed_by_euler_rotation(axis, axis_rotation, euler_rot
     return quat_outer_product.to_euler()
 
 
-def calculate_torus_major_segments(ob):
-    """
-    calculate and return number of torus segments
-    """
+def calculate_torus_major_segments(ob: bpy.types.Object) -> int:
 
-    # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
+    saved_loc, saved_rot = save_and_reset_transforms(ob)
 
     bm = bmesh.new()
     bm.from_mesh(ob.data)
-    i = 0
-
-    # we need any vert, just setting the first one
     bm.verts.ensure_lookup_table()
-    temp_vert = bm.verts[0].co
-    temp_vert_Z = round(temp_vert[2], 5)
-    temp_distance = round(distance_vec(temp_vert, Vector((0, 0, 0))), 2)
+    middle = Vector((0, 0, 0))
 
-    # basically find the entire circle of vertices with same Z, this is how we get the segments
-    # one other caveat, if the minor segments are uneven then there's an extra row of vertices on the inside with same Z value
-    # to fix that we're checking that the distance matches the first found distance from (0,0,0)
-    # look at https://drive.google.com/file/d/12uINdegB93RPiPTYzLv5-8PSNVTv8J8S/view?usp=sharing
-    for v in bm.verts:
-        obMat = ob.matrix_world
-        current_vert = obMat @ v.co
-        if round(current_vert[2], 5) == temp_vert_Z and round(distance_vec(current_vert, Vector((0, 0, 0))), 2) == temp_distance:
-            i += 1
+    # Get the distance of any vert to the center, then look for all the verts that belong to that ring
+    ring_vert = bm.verts[0].co
+    dist = vector_distance(ring_vert, middle)
 
+    # Checking for same Z isn't enough because we can have an inner ring at same Z which shouldn't be counted, it has different dist though
+    # Look at https://drive.google.com/file/d/12uINdegB93RPiPTYzLv5-8PSNVTv8J8S/view?usp=sharing
+    segments = sum([floats_are_same(v.co.z, ring_vert.z)
+                   and floats_are_same(vector_distance(v.co, middle), dist) for v in bm.verts])
+
+    # Restore original object location/rotation
     bm.free()
-
-    # restore original object location/rotation
     ob.location = saved_loc
     ob.rotation_euler = saved_rot
 
-    return i
+    return segments
+
+
+def restore_origin(original_origin: Vector) -> None:
+    """Restores the origin by moving the 3D cursor to the original location and setting the origin to cursor"""
+    cursor_loc = Vector(bpy.context.scene.cursor.location)
+    bpy.context.scene.cursor.location = original_origin
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
+    bpy.context.scene.cursor.location = cursor_loc
 
 
 def calculate_sphere_segments(ob):
 
     # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
+    saved_loc, saved_rot = save_and_reset_transforms(ob)
 
     bm = bmesh.new()
     bm.from_mesh(ob.data)
@@ -326,13 +261,13 @@ def calculate_sphere_segments(ob):
 def calculate_icosphere_radius(ob):
 
     # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
+    saved_loc, saved_rot = save_and_reset_transforms(ob)
 
     bm = bmesh.new()
     bm.from_mesh(ob.data)
 
     bm.verts.ensure_lookup_table()
-    radius = distance_vec(bm.verts[0].co, Vector((0, 0, 0)))
+    radius = vector_distance(bm.verts[0].co, Vector((0, 0, 0)))
 
     ob.location = saved_loc
     ob.rotation_euler = saved_rot
@@ -341,522 +276,190 @@ def calculate_icosphere_radius(ob):
     return radius
 
 
-def is_cone_cylindrical(ob):
+def is_cone_cylindrical(ob: bpy.types.Object) -> bool:
+    ''' Cylindrical cones have the same location when origin is set to bounds or median '''
+    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+    loc_origin_bounds = Vector(ob.location)
+    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
+    loc_origin_median = Vector(ob.location)
 
-    # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
+    return vectors_are_same(loc_origin_bounds, loc_origin_median)
 
-    # enter edit mode, fill faces if necessary
-    bpy.ops.object.editmode_toggle()
-    was_filled, total_faces, difference = fill_face(ob)
-    bm = bmesh.from_edit_mesh(ob.data)
 
-    # initialize
-    points_top = []
-    points_bottom = []
-    i = 0
-    top_vert = 0
+def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, int, str, bool]:
+    """ Calculates bottom/top radius, number of verts,cap type and if it's sharp tipped"""
 
-    # this loop tells us if there are more points than 1 on either side, from that we can find out if the radius should be 0 or more
-    for v in bm.verts:
+    # We already fixed the rotation at this point now just have to reset it to 0,0,0 so z values are correct
+    saved_rot = Euler(ob.rotation_euler)
+    ob.rotation_euler = (0, 0, 0)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
-        current_vert = v.co
-        # only do this at the start of the loop, remember the first vert, we'll decide whether it's part of top or bottom in the next part
-        if i == 0:
-            temp_vert_Z = round(current_vert[2], 5)
-            temp_vert = current_vert
-            i += 1
-            continue
+    top_vertices, bottom_vertices = [], []
+    min_z, max_z = float('inf'), float('-inf')
 
-        if i == 1:
-            # if the second vert has bigger Z value than the temp_vert we'll assign temp vert as top one
-            if round(current_vert[2], 5) < temp_vert_Z:
+    # Classify vertices as belonging to the top or bottom
+    for v in ob.data.vertices:
+        z = v.co.z
+        if z > max_z + TOLERANCE:
+            max_z = z
+            top_vertices = [v]
+        elif floats_are_same(z, max_z):
+            top_vertices.append(v)
 
-                points_top.append(temp_vert)
-                top_vert = round(temp_vert[2], 5)
-                # also append the current vert to bottom
-                points_bottom.append(current_vert)
+        if z < min_z - TOLERANCE:
+            min_z = z
+            bottom_vertices = [v]
+        elif floats_are_same(z, min_z):
+            bottom_vertices.append(v)
 
-            # if the second vert Z value is same as the first vert we found then it means the other side has only 1 vert, this is just how blender orders verts
-            # example [(0,0,-1),(0,1,-1),.............,(0,1,1)]
-            elif round(current_vert[2], 5) == temp_vert_Z:
+    # Calculate radii
+    def calculate_radius_from_face_verts(vertices) -> int:
+        if len(vertices) <= 1:
+            return 0
+        center = sum((v.co for v in vertices), Vector()) / len(vertices)
+        return sum(vector_distance(v.co, center) for v in vertices) / len(vertices)
 
-                points_top.append(current_vert)
-                points_top.append(temp_vert)
-                top_vert = temp_vert_Z
+    top_radius = calculate_radius_from_face_verts(top_vertices)
+    bottom_radius = calculate_radius_from_face_verts(bottom_vertices)
 
-                # adding the last vert because we're breaking the loop here
-                bm.verts.ensure_lookup_table()
-                last_vert = bm.verts[len(bm.verts)-1]
-                points_bottom.append(last_vert.co)
-                # also switching the arrays if necessary
-                if round(last_vert.co[2], 5) > temp_vert_Z:
-                    top_vert = round(last_vert.co[2], 5)
-                    temp_array = points_top
-                    points_top = points_bottom
-                    points_bottom = temp_array
-                break
+    sharp_tipped = len(top_vertices) == 1 or len(bottom_vertices) == 1
 
-            # otherwise do the opposite from the first if
-            else:
+    # Determine cap type based on face normals and vertex count
+    cap_faces = [f for f in ob.data.polygons if abs(f.normal.z) > 0.99]
+    cap_type = 'NOTHING' if len(cap_faces) == 0 else (
+        'NGON' if len(cap_faces) <= 2 else 'TRIFAN')
 
-                points_top.append(current_vert)
-                top_vert = round(current_vert[2], 5)
-                # also append the temp vert to bottom
-                points_bottom.append(temp_vert)
-            i += 1
-            continue
+    # Vertices count for the larger end, subtract 1 if cap is trifan
+    verts_count = max(len(top_vertices), len(bottom_vertices))
+    verts_count = verts_count-1 if cap_type == 'TRIFAN' else verts_count
 
-        # if the current vert Z axis value is same as the one we initialized as top -> append it to top_points
-        if round(current_vert[2], 5) == top_vert:
-            points_top.append(current_vert)
-
-        # otherwise append it to bottom
-        else:
-            points_bottom.append(current_vert)
-
-        # if we found more than 1 for each side then we can just exit
-        if len(points_bottom) > 1 and len(points_top) > 1:
-            break
-
-    # delete the cap if it didn't have one
-    if was_filled:
-
-        bm.faces.ensure_lookup_table()
-        bm.faces[total_faces-1].select_set(True)
-        # if we added 2 faces delete it aswell
-        if difference == 2:
-            bm.faces[total_faces-2].select_set(True)
-
-        bpy.ops.mesh.delete(type='FACE')
-
-    # restore location and rotation
-    ob.location = saved_loc
+    # Restore original object rotation
     ob.rotation_euler = saved_rot
-    bpy.ops.object.editmode_toggle()
-    bm.free()
 
-    return len(points_bottom) > 1 and len(points_top) > 1
+    return bottom_radius, top_radius, verts_count, cap_type, sharp_tipped
 
 
-def calculate_cone_radiuses(ob):
+def calculate_cylinder_properties(ob: bpy.types.Object) -> tuple[float, int, str]:
+    """ Calculates radius, number of verts and cap type"""
 
-    # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
+    # Center the object and remember it's current location/rotation
+    saved_loc, saved_rot = save_and_reset_transforms(ob)
 
-    # enter edit mode, fill faces if necessary
-    bpy.ops.object.editmode_toggle()
-    was_filled, total_faces, difference = fill_face(ob)
-    bm = bmesh.from_edit_mesh(ob.data)
+    # Get third vert because if cap was trifan, [0] and [1] are middle verts
+    cap_vert = ob.data.vertices[2].co
+    cap_verts = [v for v in ob.data.vertices
+                 if floats_are_same(v.co.z, cap_vert.z)]
 
-    # initialize
-    points_top = []
-    points_bottom = []
-    i = 0
-    top_vert = 0
+    # Radius is the distance between a cap vert and a center fake vert(we centered the object so it's at 0,0,z)
+    radius = vector_distance(cap_vert, Vector((0, 0, cap_vert.z)))
 
-    # this loop tells us if there are more points than 1 on either side, from that we can find out if the radius should be 0 or more
-    for v in bm.verts:
-
-        current_vert = v.co
-        # only do this at the start of the loop, remember the first vert, we'll decide whether it's part of top or bottom in the next part
-        if i == 0:
-            temp_vert = current_vert
-            temp_vert_Z = current_vert.z
-            i += 1
-            continue
-
-        if i == 1:
-            # if the second vert has bigger Z value than the temp_vert we'll assign temp vert as top one
-            if not compare_coords(current_vert.z, temp_vert_Z):
-                if current_vert.z < temp_vert_Z:
-                    points_top.append(temp_vert)
-                    top_vert = temp_vert_Z
-                    points_bottom.append(current_vert)
-                else:
-                    points_top.append(current_vert)
-                    top_vert = current_vert[2]
-                    points_bottom.append(temp_vert)
-
-            # if the second vert Z value is same as the first vert we found then it means the other side has only 1 vert, this is just how blender orders verts
-            # example [(0,0,-1),(0,1,-1),.............,(0,1,1)]
-            else:
-                points_top.append(current_vert)
-                points_top.append(temp_vert)
-                top_vert = temp_vert_Z
-
-                # adding the last vert because we're breaking the loop here
-                bm.verts.ensure_lookup_table()
-                last_vert = bm.verts[-1].co
-                points_bottom.append(last_vert)
-
-                # also switching the arrays if necessary
-                if last_vert.z > temp_vert_Z + 1e-5:
-                    top_vert = last_vert.z
-                    points_top, points_bottom = points_bottom, points_top
-                break
-
-            i += 1
-
-        else:
-            if compare_coords(current_vert[2], top_vert):
-                points_top.append(current_vert)
-            else:
-                points_bottom.append(current_vert)
-
-            # if we found more than 1 for each side then we can just exit
-            if len(points_bottom) > 1 and len(points_top) > 1:
-                break
-
-    # CASE 1 -> Cone has two sides, no tip-------------------------------------------------------------------------
-    if len(points_bottom) > 1 and len(points_top) > 1:
-
-        # change selection to vertices select all quads, this gives us the edge verts on each side of the cone
-        bpy.context.tool_settings.mesh_select_mode = (True, False, False)
-        bpy.ops.mesh.select_face_by_sides(number=4, type='EQUAL')
-        selected_verts = [v for v in bm.verts if v.select]
-
-        if selected_verts[0].co[2] < selected_verts[1].co[2]:
-            top_radius = calculate_polygon_radius(
-                len(selected_verts)/2, selected_verts[1].co, selected_verts[3].co)
-            bottom_radius = calculate_polygon_radius(
-                len(selected_verts)/2, selected_verts[0].co, selected_verts[2].co)
-        else:
-            top_radius = calculate_polygon_radius(
-                len(selected_verts)/2, selected_verts[0].co, selected_verts[2].co)
-            bottom_radius = calculate_polygon_radius(
-                len(selected_verts)/2, selected_verts[1].co, selected_verts[3].co)
-
-    # CASE 2 -> Cone has a tip------------------------------------------------------------------------------------
+    # Get all the faces with normal pointing up or down, since the object is centered, the normal will be [0,0,1] or [0,0,-1]
+    cap_faces = [f for f in ob.data.polygons if abs(f.normal[2]) > 0.99]
+    if len(cap_faces) == 0:
+        cap_type = 'NOTHING'
+    elif len(cap_faces) <= 2:
+        cap_type = 'NGON'
     else:
+        cap_type = 'TRIFAN'
 
-        # change selection to edges
-        bpy.context.tool_settings.mesh_select_mode = (False, True, False)
-
-        # if there is only 1 vertex then it means that side's radius is 0
-        if len(points_top) == 1:
-            top_radius = 0
-
-        else:
-
-            # selecting the edge verts-----------------------------------------------------------------------------------------------------
-            # if the cone is a tetrahedron
-            if len(ob.data.vertices) == 4:
-
-                # change selection to verts
-                bpy.context.tool_settings.mesh_select_mode = (
-                    True, False, False)
-
-                # because of how blender vert sorting works we know that verts [1],[2] and [3] make the top face, if it was bottom they would be [0],[1] and [2]
-                bm.verts.ensure_lookup_table()
-                bm.verts[1].select_set(True)
-                bm.verts[2].select_set(True)
-                bm.verts[3].select_set(True)
-                selected_verts = [v for v in bm.verts if v.select]
-                total_selected_verts = len(selected_verts)
-
-            # if the cone is a tetraehedron with trifan cap(it can also be a pyramid with a quad cap)
-            elif len(ob.data.vertices) == 5:
-
-                # change selection to verts
-                bpy.context.tool_settings.mesh_select_mode = (
-                    True, False, False)
-
-                # select all quads, if something got selected then it was a pyramid with quad cap
-                bpy.ops.mesh.select_face_by_sides(number=4, type='EQUAL')
-                selected_verts = [v for v in bm.verts if v.select]
-                total_selected_verts = len(selected_verts)
-
-                # if nothing got selected it was a tetrahedron with trifan cap
-                if len(selected_verts) == 0:
-
-                    # because of how blender vert sorting works we know that [2],[3] and [4] make the top face, if it was bottom it would be [1],[2] and [3]
-                    bm.verts.ensure_lookup_table()
-                    bm.verts[2].select_set(True)
-                    bm.verts[3].select_set(True)
-                    bm.verts[4].select_set(True)
-                    selected_verts = [v for v in bm.verts if v.select]
-                    total_selected_verts = len(selected_verts)
-
-            # in all the other cases we can simply select the sharp edges instead
-            else:
-
-                # select all the sharp edges
-                bpy.ops.mesh.edges_select_sharp(sharpness=1.5708)
-                selected_verts = [v for v in bm.verts if v.select]
-                total_selected_verts = len(selected_verts)
-
-                # if nothing got selected from sharp edges it means the cone has no caps
-                # in that case just select everything
-                if total_selected_verts == 0:
-
-                    # in that case just select everything
-                    bpy.ops.mesh.select_all(action='SELECT')
-                    selected_verts = [v for v in bm.verts if v.select]
-                    # -1 because we selected the tip aswell
-                    total_selected_verts = len(selected_verts)-1
-
-            top_radius = calculate_polygon_radius(
-                total_selected_verts, selected_verts[0].co, selected_verts[1].co)
-
-        # checking other side now,same process as the above code
-        # if there is only 1 vertex then it means that side's radius is 0
-        if len(points_bottom) == 1:
-            bottom_radius = 0
-
-        else:
-
-            # selecting the edge verts-----------------------------------------------------------------------------------------------------
-            # if the cone is a tetrahedron
-            if len(ob.data.vertices) == 4:
-
-                # change selection to verts
-                bpy.context.tool_settings.mesh_select_mode = (
-                    True, False, False)
-
-                # because of how blender vert sorting works we know that [0],[1] and [2] create the bottom face
-                bm.verts.ensure_lookup_table()
-                bm.verts[0].select_set(True)
-                bm.verts[1].select_set(True)
-                bm.verts[2].select_set(True)
-                selected_verts = [v for v in bm.verts if v.select]
-                total_selected_verts = len(selected_verts)
-
-            # if the cone is a tetraehedron with trifan cap(it can also be a pyramid with a quad cap)
-            elif len(ob.data.vertices) == 5:
-
-                # change selection to verts
-                bpy.context.tool_settings.mesh_select_mode = (
-                    True, False, False)
-
-                # select all quads, if something got selected then it was a pyramid with quad cap
-                bpy.ops.mesh.select_face_by_sides(number=4, type='EQUAL')
-                selected_verts = [v for v in bm.verts if v.select]
-                total_selected_verts = len(selected_verts)
-
-                # if nothing got selected it was a tetrahedron with trifan cap
-                if len(selected_verts) == 0:
-
-                    # because of how blender vert sorting works we know that [1],[2] and [3] create the bottom face
-                    bm.verts.ensure_lookup_table()
-                    bm.verts[1].select_set(True)
-                    bm.verts[2].select_set(True)
-                    bm.verts[3].select_set(True)
-                    selected_verts = [v for v in bm.verts if v.select]
-                    total_selected_verts = len(selected_verts)
-
-            # in all the other cases we can simply select the sharp edges instead
-            else:
-                bpy.ops.mesh.edges_select_sharp(sharpness=1.5708)
-                selected_verts = [v for v in bm.verts if v.select]
-                total_selected_verts = len(selected_verts)
-
-                # if nothing got selected from sharp edges it means the cone has no caps
-                if total_selected_verts == 0:
-
-                    # in that case just select everything
-                    bpy.ops.mesh.select_all(action='SELECT')
-                    selected_verts = [v for v in bm.verts if v.select]
-
-                    # -1 because we selected the tip aswell
-                    total_selected_verts = len(selected_verts)-1
-
-            bottom_radius = calculate_polygon_radius(
-                total_selected_verts, selected_verts[0].co, selected_verts[1].co)
-
-    # deselect everything
-    bpy.ops.mesh.select_all(action='DESELECT')
-
-    # delete the cap if it didn't have one
-    if was_filled:
-
-        bm.faces.ensure_lookup_table()
-        bm.faces[total_faces-1].select_set(True)
-        # if we added 2 faces delete it aswell
-        if difference == 2:
-            bm.faces[total_faces-2].select_set(True)
-
-        bpy.ops.mesh.delete(type='FACE')
-
-    # restore location and rotation
-    ob.location = saved_loc
-    ob.rotation_euler = saved_rot
-    bpy.ops.object.editmode_toggle()
-    bm.free()
-
-    return bottom_radius, top_radius
-
-
-def calculate_cylinder_radius(ob):
-
-    # save both and reset to 0, return it to original after
-    saved_loc, saved_rot = save_reset_and_apply_transforms(ob)
-
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
-
-    # get third vert in case cap was trifan, [0] and [1] are middle ones
-    bm.verts.ensure_lookup_table()
-    edge_vert = bm.verts[2].co
-
-    # middle point would have the same Z as an edge vert and both X and Y as 0
-    middlepoint_top = Vector((0, 0, edge_vert[2]))
-
-    radius = distance_vec(edge_vert, middlepoint_top)
-
-    bm.free()
-
-    # restore original object location/rotation
+    # Restore original object location/rotation
     ob.location = saved_loc
     ob.rotation_euler = saved_rot
 
-    return radius
+    verts = len(cap_verts)-1 if cap_type == 'TRIFAN' else len(cap_verts)
+    return radius, verts, cap_type
 
 
-def check_if_wrong_circle_rotation(ob):
-    """
-    checks if the circle has true (0,0,0) rotation by checking how many verts have different Z values
-    """
+def applied_rotation_circle(ob: bpy.types.Object) -> bool:
+    """ Checks if the circle verts have more than 1 unique Z value """
 
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
+    saved_rot = Euler(ob.rotation_euler)
+    bpy.ops.object.rotation_clear(clear_delta=False)
+    z = ob.data.vertices[0].co.z
 
-    # initialize array
-    points_with_different_Z = []
+    applied = any(abs(z - v.co.z) > TOLERANCE for v in ob.data.vertices)
 
-    # loop through all the vertices and add each one with new Z
-    for v in bm.verts:
+    ob.rotation_euler = saved_rot
 
-        obMat = ob.matrix_world
-        current_vert = obMat @ v.co
+    return applied
 
-        if round(current_vert[2], 5) not in points_with_different_Z:
-            points_with_different_Z.append(round(current_vert[2], 5))
-            # if there's more than 2 vertices with different Z then the object is not correctly rotated
-            if len(points_with_different_Z) > 1:
-                return True
 
-    bm.free()
+def applied_rotation_cone_or_cylinder(ob: bpy.types.Object) -> bool:
+    """ Check if cone or cylinder have verts with more than 2 unique Z values """
 
+    # Clear the rotation because we want the object sitting flat on x/y axes
+    saved_rot = Euler(ob.rotation_euler)
+    bpy.ops.object.rotation_clear(clear_delta=False)
+
+    zs = set()
+
+    for v in ob.data.vertices:
+
+        z = round(v.co.z, 5)
+        zs.add(z)
+
+        if len(zs) > 2:
+            return True
+
+    ob.rotation_euler = saved_rot
     return False
 
 
-def check_if_wrong_cone_or_cylinder_rotation(ob):
-    """
-    checks if cone/cylinder have true (0,0,0) rotation by counting if verts have more than 2 different Z values
-    """
+def applied_rotation_torus(ob: bpy.types.Object) -> bool:
+    """ Check if torus has more verts with different [Z] than minor segments """
 
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
+    # Clear the rotation because we want the object sitting flat on x/y axes
+    saved_rot = Euler(ob.rotation_euler)
+    bpy.ops.object.rotation_clear(clear_delta=False)
+    zs = set()
 
-    # initialize array
-    points_with_different_Z = []
+    for v in ob.data.vertices:
+        z = round(v.co.z, 5)
+        zs.add(z)
 
-    # loop through all the vertices and add each one with new Z
-    for v in bm.verts:
+    ob.rotation_euler = saved_rot
 
-        obMat = ob.matrix_world
-        current_vert = obMat @ v.co
-
-        if round(current_vert[2], 5) not in points_with_different_Z:
-            points_with_different_Z.append(round(current_vert[2], 5))
-            # if there's more than 2 vertices with different Z then the object is not correctly rotated
-            if len(points_with_different_Z) > 2:
-                return True
-
-    bm.free()
-    return False
+    # total polygons = major segments*minor segments
+    # At this point we don't know how many major or minor segments torus has but we know how many polygons
+    # We also know that minimum number of both segments is 3, that means if we assume that there is 3 major segments then we get the max amount of minor segments
+    return len(zs) > len(ob.data.polygons)/3
 
 
-def check_if_wrong_torus_rotation(ob):
-    """
-    this function calculates how many verts have different Z values
-    if torus is slightly rotated it's gonna have more verts with different [Z] than minor segments
-    """
+def applied_rotation_sphere(ob: bpy.types.Object) -> bool:
+    """ Check how many verts have different Z values, if the sphere is slightly rotated 
+        it's gonna have more verts with different Zs than there are rings """
 
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
+    # Clear the rotation because we want the object sitting flat on x/y axes
+    saved_rot = Euler(ob.rotation_euler)
+    bpy.ops.object.rotation_clear(clear_delta=False)
+    zs = set()
 
-    # initialize array
-    points_with_different_Z = []
+    for v in ob.data.vertices:
 
-    # loop through all the vertices and add each one with new Z
-    for v in bm.verts:
+        z = round(v.co.z, 5)
+        zs.add(z)
 
-        obMat = ob.matrix_world
-        current_vert = obMat @ v.co
+    ob.rotation_euler = saved_rot
 
-        if round(current_vert[2], 5) not in points_with_different_Z:
-            points_with_different_Z.append(round(current_vert[2], 5))
-
-    bm.free()
-
-    # total polygons=major segments*minor segments
-    # minimal number of both segments is 3
-    # when this function is called we only know the number of total polygons, not major or minor segments
-    # by assuming the worst case scenario which is torus having 3 major segments we can say it has minor segments=polygons/3,
-    # this way we're getting maximum possible minor segments and by covering the worst case scenario we cover all of them
-    return len(points_with_different_Z) > len(ob.data.polygons)/3
+    # total polygons = segments*rings
+    # At this point we don't know how many segments or rings sphere has, but we know how many polygons
+    # We also know that the minimum number of both rings and segments is 3
+    # By assuming the worst case scenario which is sphere having 3 segments we can say it has polygons/3 rings
+    return len(zs)-1 > len(ob.data.polygons)/3
 
 
-def check_if_wrong_sphere_rotation(ob):
-    """
-    this function calculates how many verts have different Z values
-    if sphere is slightly rotated it's gonna have more verts with different [Z] than rings
-    """
-
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
-
-    # initialize array
-    points_with_different_Z = []
-
-    # loop through all the vertices and add each one with new Z
-    for v in bm.verts:
-
-        obMat = ob.matrix_world
-        current_vert = obMat @ v.co
-        if round(current_vert[2], 3) not in points_with_different_Z:
-            points_with_different_Z.append(round(current_vert[2], 3))
-
-    bm.free()
-
-    # total polygons=segments*rings
-    # minimal number of both segments and rings is 3
-    # when this function is called we only know the number of total polygons, not segments or rings
-    # by assuming the worst case scenario which is sphere having 3 segments we can say it has rings=polygons/3,
-    # this way we're getting maximum possible rings and by covering the worst case scenario we cover all of them
-    return len(points_with_different_Z)-1 > len(ob.data.polygons)/3
-
-
-def select_smallest_from_selected_faces(faces):
-
-    i = 0
-    # loop through all the faces and find the smallest one
-    for f in faces:
-
-        if i == 0:
-            smallest_face_value = f.calc_area()
-            smallest_face = f
-            i += 1
-            continue
-        if f.calc_area() < smallest_face_value:
-            smallest_face_value = f.calc_area()
-            smallest_face = f
-
-    # deselect everything and select the smallest face
+def select_smallest_from_selected_faces(faces) -> None:
     bpy.ops.mesh.select_all(action='DESELECT')
-    smallest_face.select_set(True)
+    faces[min([(f.calc_area(), idx)
+               for idx, f in enumerate(faces)])[1]].select_set(True)
 
 
-def show_or_hide_modifiers_in_viewport(ob, visibility):
-    '''
-    modifiers change some object data so we disable them before calculating said data
-    '''
+def show_or_hide_modifiers_in_viewport(ob, visibility) -> bool:
+    """ Modifiers change some object data so we disable them before calculating said data """
 
     was_changed = False
     for mod in getattr(ob, "modifiers", []):
-        # if modifier viewport visibility is different from given visibility
+        # If modifier viewport visibility is different from given visibility
         if mod.show_viewport != visibility:
             mod.show_viewport = visibility
             was_changed = True
@@ -864,12 +467,10 @@ def show_or_hide_modifiers_in_viewport(ob, visibility):
     return was_changed
 
 
-def calculate_z_offset(N):
-    '''
-    calculates the offset necessary to match the rotation after using fix rotation operator
-    it is equal to the interior angle between two sides divided by -2
-    look at https://drive.google.com/file/d/1FCij1TjPVtvxHkxPpxW_ekRujkDkQivQ/view?usp=sharing
-    '''
+def calculate_z_offset(N: int) -> float:
+    """ Calculates the offset necessary to match the rotation after using fix rotation operator
+        it is equal to the interior angle between two sides divided by -2
+        look at https://drive.google.com/file/d/1FCij1TjPVtvxHkxPpxW_ekRujkDkQivQ/view?usp=sharing """
 
     interior_angles = pi-(2*pi/N)
     z_offset = -interior_angles/2
@@ -877,71 +478,74 @@ def calculate_z_offset(N):
     return z_offset
 
 
-def copy_modifiers_and_delete_original(original_ob, new_ob, name):
+def copy_modifiers_and_delete_original(original_ob: bpy.types.Object, new_ob: bpy.types.Object) -> None:
 
-    # make the original object active
+    parent = original_ob.parent
+    name = original_ob.name
+
+    # Copy over display type and keep the same shading
+    new_ob.display_type = original_ob.display_type
+    if original_ob.data.polygons and original_ob.data.polygons[0].use_smooth:
+        bpy.ops.object.shade_smooth()
+
+    # Remember all the collections the object belonged to since we will delete it
+    original_collections = original_ob.users_collection
+
+    if parent:
+        new_ob.parent = parent
+        new_ob.matrix_parent_inverse = parent.matrix_world.inverted()  # Keep transform
+
+        # If the parent has some modifiers that point to the original object, point them to new one instead
+        for mod in parent.modifiers:
+            if hasattr(mod, 'object') and mod.object == original_ob:
+                mod.object = new_ob
+
+    # Make the original object active then copy all the modifiers and materials to the new object
     bpy.context.view_layer.objects.active = original_ob
-
-    # copy modifiers from active object(original) to the newly created object
-    # new object has to be added prior to this(currently selected)
     bpy.ops.object.make_links_data(type='MODIFIERS')
+    bpy.ops.object.make_links_data(type='MATERIAL')
 
-    # deselect everything and select original object, then delete it
-    bpy.ops.object.select_all(action='DESELECT')
-    original_ob.select_set(True)
-    bpy.ops.object.delete()
+    # Delete the original object mesh, this will also delete the object
+    bpy.data.meshes.remove(bpy.data.meshes[original_ob.data.name])
 
-    # select the newly created object
+    # Select the newly created object
     new_ob.select_set(True)
     bpy.context.view_layer.objects.active = new_ob
 
-    # rename the new object to match the original
+    # Rename the new object to match the original, and add it to all the collections the original object belonged to
     new_ob.name = name
+    for col in original_collections:
+        if name not in col.objects:
+            col.objects.link(new_ob)
 
-    return
 
-
-def select_unique_faces(ob):
-    '''
-    selects faces that appear only once or twice, otherwise just select the first one
-    '''
-
+def select_unique_faces(ob: bpy.types.Object) -> None:
+    """ Select faces that appear only once or twice, otherwise select the first one """
     bm = bmesh.from_edit_mesh(ob.data)
-    faces = bm.faces
-    different_faces = dict()
+    area_faces = defaultdict(list)
 
-    for f in faces:
-        area = round(f.calc_area(), 4)
-        if area in different_faces:
-            different_faces[area][0] += 1
-            different_faces[area][1].append(f)
-        else:
-            different_faces[area] = [1, [f]]
+    # Group faces by their area
+    for face in bm.faces:
+        area = round(face.calc_area(), 4)
+        area_faces[area].append(face)
 
-    unique_faces = []
-    for area in different_faces.keys():
-        if different_faces[area][0] <= 2:
-            unique_faces.extend(different_faces[area][1])
+    # Get unique faces (appear only once or twice)
+    unique_faces = chain.from_iterable(
+        faces for faces in area_faces.values() if len(faces) <= 2)
 
-    total_unique_faces = len(unique_faces)
-
-    # deselect everything and select unique faces
-    # if we didn't find any unique faces just select the first face
+    # Deselect everything and select unique faces
     bpy.ops.mesh.select_all(action='DESELECT')
-    faces.ensure_lookup_table()
-    if total_unique_faces == 0:
-        faces[0].select_set(True)
-        return
-    if total_unique_faces > 1:
-        unique_faces[0].select_set(True)
-        unique_faces[1].select_set(True)
+    if len(unique_faces) > 0:
+        for face in unique_faces:
+            face.select_set = True
     else:
-        unique_faces[0].select_set(True)
+        bm.faces[0].select_set(True)
 
 
-def select_rotational_cylinder(ob):
+def select_rotational_cylinder(ob: bpy.types.Object):
     """
-    select or create faces that are needed to properly rotate the cone
+    Select or create faces that are needed to properly rotate the cylinder
+    #TODO Refactor
     """
 
     # change selection to faces
@@ -981,7 +585,7 @@ def select_rotational_cylinder(ob):
         # this selects one of the faces on top/bottom, we get the full face using coplanar
         bm.faces.ensure_lookup_table()
         bm.faces[total_faces-2].select_set(True)
-        bpy.ops.mesh.select_similar(type='COPLANAR', threshold=0.01)
+        bpy.ops.mesh.select_similar(type='FACE_COPLANAR', threshold=0.01)
 
         # dissolve selected faces,left with an ngon
         bpy.ops.mesh.dissolve_faces()
@@ -1000,11 +604,10 @@ def select_rotational_cylinder(ob):
         bpy.ops.mesh.delete(type='FACE')
 
 
-def select_rotational_cone(ob):
-    """
-    select or create faces that are needed to properly rotate the cone
-    """
-    # change selection to faces
+def select_rotational_cone(ob: bpy.types.Object):
+    """ Select or create faces that are needed to properly rotate the cone """
+
+    # Change selection to faces
     bpy.context.tool_settings.mesh_select_mode = (False, False, True)
 
     was_filled, total_faces, difference = fill_face(ob)
@@ -1172,13 +775,13 @@ def insert_middle_face_torus(ob):
         current_vert = v.co
         # if first time in the loop initialize distance from the current point to the middle
         if i == 0:
-            shared_distance = round(distance_vec(
+            shared_distance = round(vector_distance(
                 current_vert, Vector((0, 0, 0))), 4)
             v.select = True
             i += 1
             continue
 
-        if round(distance_vec(current_vert, Vector((0, 0, 0))), 4) == shared_distance:
+        if round(vector_distance(current_vert, Vector((0, 0, 0))), 4) == shared_distance:
             # select the other vert if it has same distance
             v.select = True
             # break as soon as we get second one we can select the entire ring by knowing just the 2 of them
@@ -1201,10 +804,10 @@ def insert_middle_face_torus(ob):
 
     return
 
-# individual functions that replace the current mesh with a new one that looks the same-----------------------------------------------------------------
+# Individual functions that replace the current mesh with a new one that looks the same-----------------------------------------------------------------
 
 
-def replace_circle(vertices, radius, cap_fill, location, rotation, align, b_UV, set_origin_to_cursor: bool):
+def replace_circle(vertices, radius, cap_fill, location, rotation, align, b_UV: bool, origin: Vector) -> None:
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1216,16 +819,12 @@ def replace_circle(vertices, radius, cap_fill, location, rotation, align, b_UV, 
         bpy.ops.mesh.primitive_circle_add(vertices=vertices, radius=radius, fill_type=cap_fill, location=location, rotation=rotation,
                                           calc_uvs=b_UV)
 
-    # new object reference
     new_ob = bpy.context.active_object
-    if set_origin_to_cursor:
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    copy_modifiers_and_delete_original(
-        original_ob, new_ob, original_ob.name)
+    copy_modifiers_and_delete_original(original_ob, new_ob)
+    restore_origin(origin)
 
 
-def replace_cone(vertices, radius1, radius2, depth, cap_fill, location, rotation, align, b_UV, set_origin_to_cursor: bool):
+def replace_cone(vertices, radius1, radius2, depth, cap_fill, location, rotation, align, b_UV, origin: Vector) -> None:
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1239,17 +838,12 @@ def replace_cone(vertices, radius1, radius2, depth, cap_fill, location, rotation
         bpy.ops.mesh.primitive_cone_add(end_fill_type=cap_fill, depth=depth, radius1=radius1, radius2=radius2, vertices=vertices,
                                         location=location, calc_uvs=b_UV, rotation=rotation)
 
-    # new object reference
     new_ob = bpy.context.active_object
-    if set_origin_to_cursor:
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    copy_modifiers_and_delete_original(
-        original_ob, new_ob, original_ob.name)
+    copy_modifiers_and_delete_original(original_ob, new_ob)
+    restore_origin(origin)
 
 
-def replace_cylinder(vertices, radius, depth, cap_fill, location, rotation, align, b_UV, set_origin_to_cursor: bool):
-
+def replace_cylinder(vertices, radius, depth, cap_fill, location, rotation, align, b_UV, origin: Vector) -> None:
     # original object reference
     original_ob = bpy.context.active_object
 
@@ -1260,16 +854,12 @@ def replace_cylinder(vertices, radius, depth, cap_fill, location, rotation, alig
         bpy.ops.mesh.primitive_cylinder_add(
             end_fill_type=cap_fill, depth=depth, radius=radius, vertices=vertices, location=location, rotation=rotation, calc_uvs=b_UV)
 
-    # new object reference
     new_ob = bpy.context.active_object
-    if set_origin_to_cursor:
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    copy_modifiers_and_delete_original(
-        original_ob, new_ob, original_ob.name)
+    copy_modifiers_and_delete_original(original_ob, new_ob)
+    restore_origin(origin)
 
 
-def replace_icosphere(subdivisions, radius, location, rotation, align, b_UV, set_origin_to_cursor: bool):
+def replace_icosphere(subdivisions, radius, location, rotation, align, b_UV, origin: Vector) -> None:
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1281,16 +871,12 @@ def replace_icosphere(subdivisions, radius, location, rotation, align, b_UV, set
         bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=subdivisions, radius=radius, location=location, rotation=rotation,
                                               calc_uvs=b_UV)
 
-    # new object reference
     new_ob = bpy.context.active_object
-    if set_origin_to_cursor:
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    copy_modifiers_and_delete_original(
-        original_ob, new_ob, original_ob.name)
+    copy_modifiers_and_delete_original(original_ob, new_ob)
+    restore_origin(origin)
 
 
-def replace_torus(major_segments, minor_segments, major_radius, minor_radius, location, rotation, align, b_UV, set_origin_to_cursor: bool):
+def replace_torus(major_segments, minor_segments, major_radius, minor_radius, location, rotation, align, b_UV, origin: Vector) -> None:
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1302,16 +888,12 @@ def replace_torus(major_segments, minor_segments, major_radius, minor_radius, lo
         bpy.ops.mesh.primitive_torus_add(major_segments=major_segments, minor_segments=minor_segments, location=location,
                                          major_radius=major_radius, minor_radius=minor_radius, generate_uvs=b_UV, rotation=rotation)
 
-    # new object reference
     new_ob = bpy.context.active_object
-    if set_origin_to_cursor:
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    copy_modifiers_and_delete_original(
-        original_ob, new_ob, original_ob.name)
+    copy_modifiers_and_delete_original(original_ob, new_ob)
+    restore_origin(origin)
 
 
-def replace_uv_sphere(segments, rings, radius, location, rotation, align, b_UV, set_origin_to_cursor: bool):
+def replace_uv_sphere(segments, rings, radius, location, rotation, align, b_UV, origin: Vector) -> None:
 
     # original object reference
     original_ob = bpy.context.active_object
@@ -1323,13 +905,9 @@ def replace_uv_sphere(segments, rings, radius, location, rotation, align, b_UV, 
         bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=location, rotation=rotation,
                                              calc_uvs=b_UV)
 
-    # new object reference
     new_ob = bpy.context.active_object
-    if set_origin_to_cursor:
-        bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-    copy_modifiers_and_delete_original(
-        original_ob, new_ob, original_ob.name)
+    copy_modifiers_and_delete_original(original_ob, new_ob)
+    restore_origin(origin)
 
 
 def calculate_sides(ob):
@@ -1367,27 +945,7 @@ def calculate_sides(ob):
         bpy.ops.object.transform_apply(
             location=False, rotation=True, scale=False)
 
-        # find out if cone is cylinderlike
-        radius1, radius2 = calculate_cone_radiuses(ob)
-        cylindrical = False
-        if radius1 > 0 and radius2 > 0:
-            cylindrical = True
-
-        # if both top and bottom radius are not zero we have to divide vertices with 2
-        if cylindrical:
-
-            if total_faces == total_vertices/2+2 or total_faces == total_vertices/2:
-                sides = total_vertices/2
-            else:
-                sides = total_vertices/2-1
-
-        # one side has radius 0
-        else:
-
-            if total_faces == total_vertices or total_faces == total_vertices-1:
-                sides = total_vertices-1
-            else:
-                sides = total_vertices-2
+        _, _, sides, _, _ = calculate_cone_properties(ob)
 
     elif ob.data.name.startswith(localization_sphere):
         group = 1
@@ -1403,64 +961,49 @@ def calculate_sides(ob):
     return sides, group
 
 
-def Z_offset_ob(ob):
-    '''
-    rotate object on Z so it matches blender default rotation
-    '''
-
-    # we have to know how many sides object has and which group it belongs to
+def Z_offset_ob(ob: bpy.types.Object) -> None:
+    """ After fixing object rotation we might have to rotate it around Z axis to match the original """
+    # We have to know how many sides object has and which group it belongs to
     sides, group = calculate_sides(ob)
 
-    # circle, cone, UVSphere and cylinder
+    # Circle, cone, UVSphere and cylinder
     if group == 1:
-
-        # we don't have to fix the rotation if edges go through Y axis by default
-        if (sides-2) % 4 != 0:
-
-            # if uneven we can just rotate on Z by 90 degrees
-            if sides % 2 != 0:
-                ob.rotation_euler = Euler((0, 0, -pi/2))
-
-            # otherwise we have to calculate the angle between sides and divide it with -2
+        if (sides-2) % 4:
+            if ob.data.name.startswith(localization_cone) and sides % 2:
+                ob.rotation_euler = Euler((0, 0, pi/2))
             else:
-                z_offset = calculate_z_offset(sides)
-                ob.rotation_euler = Euler((0, 0, -z_offset))
+                ob.rotation_euler = Euler((0, 0, -calculate_z_offset(sides)))
 
-    # torus
+    # Torus
     elif group == 2:
 
-        # if you were to cut torus on both X and Y and the quarter piece you get was symmetrical to itself
+        # If you were to cut torus on both X and Y and the quarter piece you get was symmetrical to itself
         if sides % 4 == 0:
             z_offset = calculate_z_offset(sides)
             ob.rotation_euler = Euler((0, 0, -z_offset))
 
-        # if torus is symmetrical on both X and Y but the quarter piece isn't symmetrical
+        # Torus is symmetrical on both X and Y but the quarter piece isn't symmetrical
         elif sides % 2 == 0:
             ob.rotation_euler = Euler((0, 0, -pi/2))
 
-        # if torus is only symmetrical on 1 axis
+        # Torus is only symmetrical on 1 axis
         else:
             ob.rotation_euler = Euler((0, 0, -pi))
 
-    # icosphere
+    # Unlike other objects icosphere only needs to be rotated on Z for 180
     elif group == 3:
-
-        # unlike other objects icosphere only needs to be rotated on Z for 180
         ob.rotation_euler = Euler((0, 0, -pi))
 
-    # do nothing if object doesn't belong to a group
-    else:
-        return
+    # No need to fix the rotation for other types
+    return
 
 
-def smart_selection(ob):
-    """
-    function that selects the necessary face in order to rotate the object properly
-    """
+def smart_selection(ob: bpy.types.Object) -> None:
+    """ Selects the necessary face in order to rotate the object properly """
 
     if ob.data.name.startswith(localization_sphere):
 
-        # select all quads invert the selection,we get the top and bottom vert
+        # Select all quads invert the selection,we get the top and bottom vert
         bpy.ops.mesh.select_face_by_sides(number=4, type='EQUAL')
         bpy.ops.mesh.select_all(action='INVERT')
 
@@ -1478,16 +1021,12 @@ def smart_selection(ob):
         bpy.ops.mesh.delete(type='FACE')
 
     elif ob.data.name.startswith(localization_cylinder):
-
         select_rotational_cylinder(ob)
 
     elif ob.data.name.startswith(localization_torus):
-
         insert_middle_face_torus(ob)
 
     elif ob.data.name.startswith(localization_circle):
-
-        # count number of current faces
         faces = len(ob.data.polygons)
         circleHadNoCap = False
 
