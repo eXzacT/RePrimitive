@@ -7,7 +7,7 @@ from . import addon_updater_ops
 bl_info = {
     "name": "RePrimitive",
     "author": "Damjan Anđelković <damjan.andelkovic1@gmail.com>",
-    "version": (2, 0),
+    "version": (2, 0, 1),
     "blender": (4, 0, 0),
     "category": "Object",
     "description": "Manipulate primitives at any point in time without recreating them",

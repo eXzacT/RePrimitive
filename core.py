@@ -500,6 +500,10 @@ def copy_modifiers_and_delete_original(original_ob: bpy.types.Object, new_ob: bp
             if hasattr(mod, 'object') and mod.object == original_ob:
                 mod.object = new_ob
 
+    for child in original_ob.children:
+        child.parent = new_ob
+        child.matrix_parent_inverse = new_ob.matrix_world.inverted()  # Keep transform
+
     # Make the original object active then copy all the modifiers and materials to the new object
     bpy.context.view_layer.objects.active = original_ob
     bpy.ops.object.make_links_data(type='MODIFIERS')
