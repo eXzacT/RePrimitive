@@ -150,10 +150,11 @@ class RePrimitiveCircle(Operator):
         ob = context.active_object
         applied_rotation = False
 
-        # before any calculations are done we first hide modifiers in the viewport
+        # Before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
+        # Because we are modifying parent transforms we have to remove self as their parent
+        children = save_and_unparent_children(ob.children)
 
-        # save location and rotation
         self.saved_loc, self.saved_rot, self.origin = save_location_rotation(
             ob)
         self.align = "WORLD"
@@ -196,6 +197,8 @@ class RePrimitiveCircle(Operator):
             show_or_hide_modifiers_in_viewport(ob, True)
 
         restore_origin(self.origin)
+        for child in children:
+            reparent(child, ob)
 
         # we don't have to fix the rotation if verts go through Y axis by default
         if applied_rotation and (self.vertices-2) % 4 != 0:
@@ -360,8 +363,11 @@ class RePrimitiveCone(Operator):
         applied_rotation = False
         ob = context.object
 
-        # before any calculations are done we first hide modifiers in the viewport
+        # Before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
+
+        # Because we are modifying parent transforms we have to remove self as their parent
+        children = save_and_unparent_children(ob.children)
 
         if applied_rotation_cone_or_cylinder(ob):
             applied_rotation = True
@@ -416,6 +422,8 @@ class RePrimitiveCone(Operator):
                     'Z', z_offset, self.saved_rot)
 
         restore_origin(self.origin)
+        for child in children:
+            reparent(child, ob)
 
         # Show operator in bottom left corner if user clicked away
         if self.operator_called_from_cancel:
@@ -546,10 +554,11 @@ class RePrimitiveCylinder(Operator):
         ob = context.active_object
         applied_rotation = False
 
-        # before any calculations are done we first hide modifiers in the viewport
+        # Before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
+        # Because we are modifying parent transforms we have to remove self as their parent
+        children = save_and_unparent_children(ob.children)
 
-        # save location and rotation
         self.saved_loc, self.saved_rot, self.origin = save_location_rotation(
             ob)
         self.align = "WORLD"
@@ -583,6 +592,10 @@ class RePrimitiveCylinder(Operator):
         if modifiers_changed:
             show_or_hide_modifiers_in_viewport(ob, True)
 
+        restore_origin(self.origin)
+        for child in children:
+            reparent(child, ob)
+
         # We don't have to fix rotation if Y axis goes through 2 cylinder edges, that happens when (vertices-2)%4==0
         # look at https://drive.google.com/file/d/1_p8GNj4fXDeyflXOhAiwfcR8xGuOf8Lj/view?usp=sharing
         if applied_rotation and (self.vertices-2) % 4 != 0:
@@ -602,8 +615,6 @@ class RePrimitiveCylinder(Operator):
             # we're force calling execute to fix the rotation
             self.from_check = True
             self.execute(context)
-
-        restore_origin(self.origin)
 
         # Show operator in bottom left corner if user clicked away
         if self.operator_called_from_cancel:
@@ -721,8 +732,11 @@ class RePrimitiveIcoSphere(Operator):
         ob = context.active_object
         applied_rotation = False
 
-        # before any calculations are done we first hide modifiers in the viewport
+        # Before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
+
+        # Because we are modifying parent transforms we have to remove self as their parent
+        children = save_and_unparent_children(ob.children)
 
         self.saved_loc, self.saved_rot, self.origin = save_location_rotation(
             ob)
@@ -750,6 +764,10 @@ class RePrimitiveIcoSphere(Operator):
         if modifiers_changed:
             show_or_hide_modifiers_in_viewport(ob, True)
 
+        restore_origin(self.origin)
+        for child in children:
+            reparent(child, ob)
+
         if applied_rotation:
 
             # unlike other objects icosphere only needs to be rotated on Z for 180
@@ -760,8 +778,6 @@ class RePrimitiveIcoSphere(Operator):
             # we're force calling execute to fix the rotation
             self.from_check = True
             self.execute(context)
-
-        restore_origin(self.origin)
 
         # Show operator in bottom left corner if user clicked away
         if self.operator_called_from_cancel:
@@ -897,10 +913,11 @@ class RePrimitiveTorus(Operator):
         applied_rotation = False
         ob = context.active_object
 
-        # before any calculations are done we first hide modifiers in the viewport
+        # Before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
+        # Because we are modifying parent transforms we have to remove self as their parent
+        children = save_and_unparent_children(ob.children)
 
-        # save location and rotation
         self.saved_loc, self.saved_rot, self.origin = save_location_rotation(
             ob)
         self.align = "WORLD"
@@ -944,6 +961,10 @@ class RePrimitiveTorus(Operator):
         if modifiers_changed:
             show_or_hide_modifiers_in_viewport(ob, True)
 
+        restore_origin(self.origin)
+        for child in children:
+            reparent(child, ob)
+
         # if the rotation was applied first rotate it by offset on Z, then rotate based on saved rotation
         # look at https://drive.google.com/file/d/1xI0NubgaogZtGhrnmRr2wZmjqGRCSeW4/view?usp=sharing
         if applied_rotation:
@@ -968,8 +989,6 @@ class RePrimitiveTorus(Operator):
             # we're force calling execute to fix the rotation
             self.from_check = True
             self.execute(context)
-
-        restore_origin(self.origin)
 
         # Show operator in bottom left corner if user clicked away
         if self.operator_called_from_cancel:
@@ -1101,8 +1120,9 @@ class RePrimitiveUVSphere(Operator):
 
         # before any calculations are done we first hide modifiers in the viewport
         modifiers_changed = show_or_hide_modifiers_in_viewport(ob, False)
+        # Because we are modifying parent transforms we have to remove self as their parent
+        children = save_and_unparent_children(ob.children)
 
-        # save location and rotation
         self.saved_loc, self.saved_rot, self.origin = save_location_rotation(
             ob)
         self.align = "WORLD"
@@ -1132,6 +1152,10 @@ class RePrimitiveUVSphere(Operator):
         if modifiers_changed:
             show_or_hide_modifiers_in_viewport(ob, True)
 
+        restore_origin(self.origin)
+        for child in children:
+            reparent(child, ob)
+
         # we don't have to fix the rotation if edges go through Y axis by default
         if applied_rotation and (self.segments-2) % 4 != 0:
 
@@ -1150,8 +1174,6 @@ class RePrimitiveUVSphere(Operator):
             # we're force calling execute to fix the rotation
             self.from_check = True
             self.execute(context)
-
-        restore_origin(self.origin)
 
         # Show operator in bottom left corner if user clicked away
         if self.operator_called_from_cancel:

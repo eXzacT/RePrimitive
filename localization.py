@@ -113,12 +113,12 @@ if user_language != 'en_US':
     elif user_language == 'it_IT':
         localization_all = ('Cilindro', 'Cono', 'Cerchio',
                             'Torus', 'Sfera', 'Icosfera')
-        localization_cylinder = ('Cylindre')
-        localization_cone = ('Cône')
-        localization_circle = ('Cercle')
-        localization_torus = ('Tore')
-        localization_sphere = ('Sphère')
-        localization_icosphere = ('Icosphère')
+        localization_cylinder = ('Cilindro')
+        localization_cone = ('Cono')
+        localization_circle = ('Cerchio')
+        localization_torus = ('Torus')
+        localization_sphere = ('Sfera')
+        localization_icosphere = ('Icosfera')
     # korean
     elif user_language == 'ko_KR':
         localization_all = ('실린더', '원뿔', '원형',

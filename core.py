@@ -478,22 +478,41 @@ def calculate_z_offset(N: int) -> float:
     return z_offset
 
 
+def save_and_unparent_children(children: list[bpy.types.Object]) -> list[bpy.types.Object]:
+    """ Remove self as a parent from the children and keep their transforms """
+    for child in children:
+        matrix_world = child.matrix_world
+        child.parent = None
+        child.matrix_world = matrix_world
+
+    return children
+
+
+def reparent(child: bpy.types.Object, parent: bpy.types.Object) -> None:
+    """ Add self as a parent to the child again and keep its transforms """
+    child.parent = parent
+    child.matrix_parent_inverse = parent.matrix_world.inverted()
+
+
 def copy_modifiers_and_delete_original(original_ob: bpy.types.Object, new_ob: bpy.types.Object) -> None:
 
     parent = original_ob.parent
     name = original_ob.name
 
-    # Copy over display type and keep the same shading
+    # Copy over display type and shading
     new_ob.display_type = original_ob.display_type
-    if original_ob.data.polygons and original_ob.data.polygons[0].use_smooth:
-        bpy.ops.object.shade_smooth()
+    if original_ob.data.use_auto_smooth:
+        bpy.ops.object.shade_smooth(
+            use_auto_smooth=True, auto_smooth_angle=original_ob.data.auto_smooth_angle)
+    else:  # Didn't have autosmooth but polygons are still smooth, use shade smooth without default variables
+        if original_ob.data.polygons and original_ob.data.polygons[0].use_smooth:
+            bpy.ops.object.shade_smooth()
 
     # Remember all the collections the object belonged to since we will delete it
     original_collections = original_ob.users_collection
 
     if parent:
-        new_ob.parent = parent
-        new_ob.matrix_parent_inverse = parent.matrix_world.inverted()  # Keep transform
+        reparent(new_ob, original_ob.parent)
 
         # If the parent has some modifiers that point to the original object, point them to new one instead
         for mod in parent.modifiers:
@@ -501,8 +520,7 @@ def copy_modifiers_and_delete_original(original_ob: bpy.types.Object, new_ob: bp
                 mod.object = new_ob
 
     for child in original_ob.children:
-        child.parent = new_ob
-        child.matrix_parent_inverse = new_ob.matrix_world.inverted()  # Keep transform
+        reparent(child, new_ob)
 
     # Make the original object active then copy all the modifiers and materials to the new object
     bpy.context.view_layer.objects.active = original_ob
@@ -521,6 +539,11 @@ def copy_modifiers_and_delete_original(original_ob: bpy.types.Object, new_ob: bp
     for col in original_collections:
         if name not in col.objects:
             col.objects.link(new_ob)
+
+    # Also remove it from the default collection if it wasn't there to begin with(when we add new objects they go to default collection)
+    default_collection = bpy.context.scene.collection
+    if new_ob.name in default_collection and default_collection not in original_collections:
+        default_collection.objects.unlink(new_ob)
 
 
 def select_unique_faces(ob: bpy.types.Object) -> None:
