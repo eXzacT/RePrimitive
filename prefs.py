@@ -68,16 +68,12 @@ class RePrimitivePrefs(AddonPreferences):
         kc = wm.keyconfigs.user
         km = kc.keymaps['3D View']
 
-        # reprimitive
+        # Reprimitive
         kmi = km.keymap_items.get('object.reprimitive')
         box.context_pointer_set("keymap", km)
         rna_keymap_ui.draw_kmi([], kc, km, kmi, box, 0)
-        # fix rotation
-        kmi = km.keymap_items.get('object.fix_applied_rotation')
-        box.context_pointer_set("keymap", km)
-        rna_keymap_ui.draw_kmi([], kc, km, kmi, box, 0)
 
-        # socials and marketplace-----------------------------------------------------------
+        # Socials and marketplace-----------------------------------------------------------
         row = layout.row(align=True)
         split = row.split(factor=0.5)
         col_1 = split.column(align=True)
