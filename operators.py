@@ -1,5 +1,6 @@
 import bpy
 from .core import *
+from math import log
 from bpy.types import Operator
 from bpy.props import BoolProperty, IntProperty, EnumProperty, FloatProperty, FloatVectorProperty
 
@@ -13,10 +14,13 @@ class RePrimitive(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object and get_object_property(context.object, 'ob_type') is not None
+        return context.active_object and context.active_object.type == 'MESH'
 
     def execute(self, context):
-        match get_object_property(context.object, 'ob_type'):
+        ob_type = get_object_property(
+            context.active_object, 'ob_type') or find_ob_type(context.active_object)
+
+        match ob_type:
             case 'cylinder':
                 bpy.ops.object.reprimitive_cylinder('INVOKE_DEFAULT')
             case 'circle':
@@ -83,11 +87,13 @@ class RePrimitiveCircle(Operator):
     location: FloatVectorProperty(
         name="Location",
         subtype='TRANSLATION',
+        options={'SKIP_SAVE'},
     )
 
     rotation: FloatVectorProperty(
         name="Rotation",
         subtype='EULER',
+        options={'SKIP_SAVE'},
     )
 
     def draw(self, context):
@@ -111,33 +117,50 @@ class RePrimitiveCircle(Operator):
 
     def invoke(self, context, event):
         ob = context.active_object
-
         children = save_and_unparent_children(ob.children)
 
-        self.calc_uvs = get_object_property(ob, 'uv')
-        self.align = get_object_property(ob, 'align')
-        self.fill_type = get_object_property(ob, 'fill')
-        self.radius = get_object_property(ob, 'radius')
-        self.rotation = get_object_rotation(ob)
-
+        # Was there input from the user?
         user_input = self.vertices != -1
-        if not user_input:  # No input, read verts from the object properties
-            self.vertices = get_object_property(ob, 'vertices')
 
-        self.location, self.difference = get_ob_original_location_and_difference(
-            ob, vertices=self.vertices, fill_type=self.fill_type, radius=self.radius, rotation=self.rotation)
+        self.location, self.difference = calculate_object_location_and_difference(
+            ob)
+        self.calc_uvs = True if ob.data.uv_layers else False
+
+        # Object has custom properties, read them
+        if get_object_property(ob, 'ob_type'):
+            self.fill_type = get_object_property(ob, 'fill')
+            self.radius = get_object_property(ob, 'radius')
+            self.rotation = get_object_rotation(ob)
+            if user_input:
+                verts = get_object_property(ob, 'vertices')
+
+        else:  # Object doesn't have custom properties, calculate them
+            if (len(ob.data.polygons)) == 0:
+                self.fill_type = 'NOTHING'
+            elif (len(ob.data.polygons)) == 1:
+                self.fill_type = 'NGON'
+            else:
+                self.fill_type = 'TRIFAN'
+
+            # Have to calculate verts regarldess of input because the rotation depends on proper vert count
+            verts = len(ob.data.vertices) - \
+                1 if self.fill_type == 'TRIFAN' else len(ob.data.vertices)
+            self.radius = calculate_radius(ob)
+            self.rotation = calculate_object_rotation(
+                ob, ob_type='circle', vertices=verts, fill_type=self.fill_type, radius=self.radius)
 
         for child in children:
             reparent(child, ob)
 
         # If user called the operator with custom input execute immediately to see it applied
+        self.vertices = verts
         if user_input:
             self.execute(context)
 
         return context.window_manager.invoke_props_popup(self, event)
 
     def execute(self, context):
-        replace_object(vertices=self.vertices, radius=self.radius, fill_type=self.fill_type, align=self.align, calc_uvs=self.calc_uvs,
+        replace_object(ob_type='circle', vertices=self.vertices, radius=self.radius, fill_type=self.fill_type, align=self.align, calc_uvs=self.calc_uvs,
                        location=self.location, rotation=self.rotation, difference=self.difference)
         return {'FINISHED'}
 
@@ -209,11 +232,13 @@ class RePrimitiveCone(Operator):
     location: FloatVectorProperty(
         name="Location",
         subtype='TRANSLATION',
+        options={'SKIP_SAVE'},
     )
 
     rotation: FloatVectorProperty(
         name="Rotation",
         subtype='EULER',
+        options={'SKIP_SAVE'},
     )
 
     def draw(self, context):
@@ -239,34 +264,40 @@ class RePrimitiveCone(Operator):
 
     def invoke(self, context, event):
         ob = bpy.context.object
-
         children = save_and_unparent_children(ob.children)
-
-        self.radius1 = get_object_property(ob, 'radius1')
-        self.radius2 = get_object_property(ob, 'radius2')
-        self.depth = get_object_property(ob, 'depth')
-        self.end_fill_type = get_object_property(ob, 'fill')
-        self.align = get_object_property(ob, 'align')
-        self.calc_uvs = get_object_property(ob, 'uv')
-        self.rotation = get_object_rotation(ob)
-
         user_input = self.vertices != -1
-        if not user_input:  # No input, read verts from the object properties
-            self.vertices = get_object_property(ob, 'vertices')
 
-        self.location, self.difference = get_ob_original_location_and_difference(
+        # Object has custom properties, read them
+        if get_object_property(ob, 'ob_type'):
+            if not user_input:
+                self.vertices = get_object_property(ob, 'vertices')
+            self.radius1 = get_object_property(ob, 'radius1')
+            self.radius2 = get_object_property(ob, 'radius2')
+            self.depth = get_object_property(ob, 'depth')
+            self.end_fill_type = get_object_property(ob, 'fill')
+            self.rotation = get_object_rotation(ob)
+        else:  # Object doesn't have custom properties, calculate them
+            self.radius1, self.radius2, self.depth, verts, self.end_fill_type = calculate_cone_properties(
+                ob)
+            self.rotation = calculate_object_rotation(
+                ob, ob_type='cone', vertices=verts, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type)
+
+        self.calc_uvs = True if ob.data.uv_layers else False
+        self.location, self.difference = calculate_cone_location_and_difference(
             ob, vertices=self.vertices, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, rotation=self.rotation)
 
         for child in children:
             reparent(child, ob)
 
-        if user_input:  # If user called the operator with custom input execute immediately to see it applied
+        # If user called the operator with custom input execute immediately to see it applied
+        self.vertices = verts
+        if user_input:
             self.execute(context)
 
         return context.window_manager.invoke_props_popup(self, event)
 
     def execute(self, context):
-        replace_object(vertices=self.vertices, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, align=self.align, calc_uvs=self.calc_uvs,
+        replace_object(ob_type='cone', vertices=self.vertices, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, align=self.align, calc_uvs=self.calc_uvs,
                        location=self.location, rotation=self.rotation, difference=self.difference)
         return {'FINISHED'}
 
@@ -329,11 +360,13 @@ class RePrimitiveCylinder(Operator):
     location: FloatVectorProperty(
         name="Location",
         subtype='TRANSLATION',
+        options={'SKIP_SAVE'},
     )
 
     rotation: FloatVectorProperty(
         name="Rotation",
         subtype='EULER',
+        options={'SKIP_SAVE'},
     )
 
     def draw(self, context):
@@ -358,34 +391,40 @@ class RePrimitiveCylinder(Operator):
 
     def invoke(self, context, event):
         ob = context.active_object
-
         children = save_and_unparent_children(ob.children)
-
-        self.calc_uvs = get_object_property(ob, 'uv')
-        self.align = get_object_property(ob, 'align')
-        self.end_fill_type = get_object_property(ob, 'fill')
-        self.radius = get_object_property(ob, 'radius')
-        self.depth = get_object_property(ob, 'depth')
-        self.rotation = get_object_rotation(ob)
-
         user_input = self.vertices != -1
-        if not user_input:  # No input, read verts from the object properties
-            self.vertices = get_object_property(ob, 'vertices')
 
-        self.location, self.difference = get_ob_original_location_and_difference(
-            ob, vertices=self.vertices, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type, rotation=self.rotation)
+        self.location, self.difference = calculate_cone_location_and_difference(
+            ob)
+        self.calc_uvs = True if ob.data.uv_layers else False
+
+        # Object has custom properties, read them
+        if get_object_property(ob, 'ob_type'):
+            self.end_fill_type = get_object_property(ob, 'fill')
+            self.radius = get_object_property(ob, 'radius')
+            self.depth = get_object_property(ob, 'depth')
+            self.rotation = get_object_rotation(ob)
+            if not user_input:
+                self.vertices = get_object_property(ob, 'vertices')
+
+        else:  # Object doesn't have custom properties, calculate them
+            self.radius, self.depth, verts,  self.end_fill_type = calculate_cylinder_properties(
+                ob)
+            self.rotation = calculate_object_rotation(
+                ob, ob_type='cylinder', vertices=verts, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type)
 
         for child in children:
             reparent(child, ob)
 
         # If user called the operator with custom input execute immediately to see it applied
+        self.vertices = verts
         if user_input:
             self.execute(context)
 
         return context.window_manager.invoke_props_popup(self, event)
 
     def execute(self, context):
-        replace_object(vertices=self.vertices, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type, align=self.align, calc_uvs=self.calc_uvs,
+        replace_object(ob_type='cylinder', vertices=self.vertices, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type, align=self.align, calc_uvs=self.calc_uvs,
                        location=self.location, rotation=self.rotation, difference=self.difference)
 
         return {'FINISHED'}
@@ -481,11 +520,13 @@ class RePrimitiveTorus(Operator):
     location: FloatVectorProperty(
         name="Location",
         subtype='TRANSLATION',
+        options={'SKIP_SAVE'},
     )
 
     rotation: FloatVectorProperty(
         name="Rotation",
         subtype='EULER',
+        options={'SKIP_SAVE'},
     )
 
     def draw(self, _context):
@@ -518,21 +559,38 @@ class RePrimitiveTorus(Operator):
 
     def invoke(self, context, event):
         ob = context.active_object
-
         children = save_and_unparent_children(ob.children)
 
-        self.major_segments = get_object_property(ob, 'major_segments')
-        self.minor_segments = get_object_property(ob, 'minor_segments')
-        self.mode = get_object_property(ob, 'dimensions_mode')
-        self.major_radius = get_object_property(ob, 'major_radius')
-        self.minor_radius = get_object_property(ob, 'minor_radius')
-        self.abso_major_rad = get_object_property(ob, 'abso_major_rad')
-        self.abso_minor_rad = get_object_property(ob, 'abso_minor_rad')
-        self.align = get_object_property(ob, 'align')
-        self.generate_uvs = get_object_property(ob, 'uv')
-        self.rotation = get_object_rotation(ob)
-        self.location, self.difference = get_ob_original_location_and_difference(
-            ob, major_segments=self.major_segments, minor_segments=self.minor_segments, major_radius=self.major_radius, minor_radius=self.minor_radius, rotation=self.rotation)
+        self.location, self.difference = calculate_object_location_and_difference(
+            ob)
+        self.generate_uvs = True if ob.data.uv_layers else False
+
+        # Object has custom properties, read them
+        if get_object_property(ob, 'ob_type'):
+            self.major_segments = get_object_property(ob, 'major_segments')
+            self.minor_segments = get_object_property(ob, 'minor_segments')
+            self.mode = get_object_property(ob, 'dimensions_mode')
+            self.major_radius = get_object_property(ob, 'major_radius')
+            self.minor_radius = get_object_property(ob, 'minor_radius')
+            self.abso_major_rad = get_object_property(ob, 'abso_major_rad')
+            self.abso_minor_rad = get_object_property(ob, 'abso_minor_rad')
+            self.rotation = get_object_rotation(ob)
+        else:  # Object doesn't have custom properties, calculate them
+            # Select the minor circle, Blender always has verts 0 and 1 forming an edge that goes through it
+            select_ring_from_verts(ob, [0, 1])
+            selected_verts = get_selected_verts(ob)
+            self.minor_segments = len(selected_verts)
+            self.major_segments = len(ob.data.polygons) // self.minor_segments
+            # Last used mode,, default to major minor
+            self.mode = get_object_property(
+                ob, 'dimensions_mode', 'MAJOR_MINOR')
+            self.minor_radius = calculate_radius(selected_verts)
+            # Blender ordering, indices from 0 <-> minor_segments form a minor ring, then the first next index is a vert on the major circle, and the following are forming another minor circle
+            select_ring_from_verts(ob, [0, self.minor_segments])
+            self.major_radius = calculate_radius(
+                get_selected_verts(ob)) - self.minor_radius
+            self.rotation = calculate_object_rotation(
+                ob, ob_type='torus', major_segments=self.major_segments, minor_segments=self.minor_segments, major_radius=self.major_radius, minor_radius=self.minor_radius)
 
         for child in children:
             reparent(child, ob)
@@ -540,7 +598,7 @@ class RePrimitiveTorus(Operator):
         return context.window_manager.invoke_props_popup(self, event)
 
     def execute(self, context):
-        replace_object(major_segments=self.major_segments, minor_segments=self.minor_segments, mode=self.mode, major_radius=self.major_radius, minor_radius=self.minor_radius, abso_major_rad=self.abso_major_rad, abso_minor_rad=self.abso_minor_rad, align=self.align, generate_uvs=self.generate_uvs,
+        replace_object(ob_type='torus', major_segments=self.major_segments, minor_segments=self.minor_segments, mode=self.mode, major_radius=self.major_radius, minor_radius=self.minor_radius, abso_major_rad=self.abso_major_rad, abso_minor_rad=self.abso_minor_rad, align=self.align, generate_uvs=self.generate_uvs,
                        location=self.location, rotation=self.rotation, difference=self.difference)
         return {'FINISHED'}
 
@@ -595,11 +653,13 @@ class RePrimitiveUVSphere(Operator):
     location: FloatVectorProperty(
         name="Location",
         subtype='TRANSLATION',
+        options={'SKIP_SAVE'},
     )
 
     rotation: FloatVectorProperty(
         name="Rotation",
         subtype='EULER',
+        options={'SKIP_SAVE'},
     )
 
     def draw(self, context):
@@ -626,14 +686,22 @@ class RePrimitiveUVSphere(Operator):
 
         children = save_and_unparent_children(ob.children)
 
-        self.segments = get_object_property(ob, 'segments')
-        self.ring_count = get_object_property(ob, 'rings')
-        self.radius = get_object_property(ob, 'radius')
-        self.align = get_object_property(ob, 'align')
-        self.calc_uvs = get_object_property(ob, 'uv')
-        self.rotation = get_object_rotation(ob)
-        self.location, self.difference = get_ob_original_location_and_difference(
-            ob, segments=self.segments, ring_count=self.ring_count, radius=self.radius, rotation=self.rotation)
+        self.calc_uvs = True if ob.data.uv_layers else False
+        self.location, self.difference = calculate_object_location_and_difference(
+            ob)
+
+        # Object has custom properties, read them
+        if get_object_property(ob, 'ob_type'):
+            self.segments = get_object_property(ob, 'segments')
+            self.ring_count = get_object_property(ob, 'rings')
+            self.radius = get_object_property(ob, 'radius')
+            self.rotation = get_object_rotation(ob)
+        else:  # Object doesn't have custom properties, calculate them
+            self.segments = calculate_sphere_segments(ob)
+            self.ring_count = len(ob.data.polygons)//self.segments
+            self.radius = calculate_radius(ob)
+            self.rotation = calculate_object_rotation(
+                ob, ob_type='sphere', segments=self.segments, ring_count=self.ring_count, radius=self.radius)
 
         for child in children:
             reparent(child, ob)
@@ -641,7 +709,7 @@ class RePrimitiveUVSphere(Operator):
         return context.window_manager.invoke_props_popup(self, event)
 
     def execute(self, context):
-        replace_object(segments=self.segments, ring_count=self.ring_count, radius=self.radius, align=self.align, calc_uvs=self.calc_uvs,
+        replace_object(ob_type='sphere', segments=self.segments, ring_count=self.ring_count, radius=self.radius, align=self.align, calc_uvs=self.calc_uvs,
                        location=self.location, rotation=self.rotation, difference=self.difference)
         return {'FINISHED'}
 
@@ -686,11 +754,13 @@ class RePrimitiveIcoSphere(Operator):
     location: FloatVectorProperty(
         name="Location",
         subtype='TRANSLATION',
+        options={'SKIP_SAVE'},
     )
 
     rotation: FloatVectorProperty(
         name="Rotation",
         subtype='EULER',
+        options={'SKIP_SAVE'},
     )
 
     def draw(self, context):
@@ -713,16 +783,22 @@ class RePrimitiveIcoSphere(Operator):
 
     def invoke(self, context, event):
         ob = context.active_object
-
         children = save_and_unparent_children(ob.children)
 
-        self.subdivisions = get_object_property(ob, 'subdivisions')
-        self.radius = get_object_property(ob, 'radius')
-        self.align = get_object_property(ob, 'align')
-        self.calc_uvs = get_object_property(ob, 'uv')
-        self.rotation = get_object_rotation(ob)
-        self.location, self.difference = get_ob_original_location_and_difference(
-            ob, subdivisions=self.subdivisions, radius=self.radius, rotation=self.rotation)
+        self.calc_uvs = True if ob.data.uv_layers else False
+        self.location, self.difference = calculate_object_location_and_difference(
+            ob)
+
+        # Object has custom properties, read them
+        if get_object_property(ob, 'ob_type'):
+            self.subdivisions = get_object_property(ob, 'subdivisions')
+            self.radius = get_object_property(ob, 'radius')
+            self.rotation = get_object_rotation(ob)
+        else:  # Object doesn't have custom properties, calculate them
+            self.subdivisions = int(log(len(ob.data.polygons)/20, 4)+1)
+            self.radius = calculate_radius(ob)
+            self.rotation = calculate_object_rotation(
+                ob, ob_type='icosphere', subdivisions=self.subdivisions, radius=self.radius)
 
         for child in children:
             reparent(child, ob)
@@ -730,6 +806,6 @@ class RePrimitiveIcoSphere(Operator):
         return context.window_manager.invoke_props_popup(self, event)
 
     def execute(self, context):
-        replace_object(subdivisions=self.subdivisions, radius=self.radius, align=self.align, calc_uvs=self.calc_uvs,
+        replace_object(ob_type='icosphere', subdivisions=self.subdivisions, radius=self.radius, align=self.align, calc_uvs=self.calc_uvs,
                        location=self.location, rotation=self.rotation, difference=self.difference)
         return {'FINISHED'}

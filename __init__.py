@@ -15,9 +15,9 @@ bl_info = {
 }
 
 classes = (
+    RePrimitive,
     RePrimitivePrefs,
     RePrimitivePanel,
-    RePrimitive,
     RePrimitiveCircle,
     RePrimitiveCone,
     RePrimitiveCylinder,
@@ -65,50 +65,66 @@ def on_primitive_object_create_or_edit(dummy) -> None:
             match last_operator.name:
                 case 'Add Circle' | 'Tweak Circle':
                     set_hidden_property('str', 'ob_type', 'circle')
-                    set_hidden_property('bool', 'uv', last_operator.properties.calc_uvs)
-                    set_hidden_property('int', 'vertices', last_operator.properties.vertices)
-                    set_hidden_property('float', 'radius', last_operator.properties.radius)
-                    set_hidden_property('str', 'fill', last_operator.properties.fill_type)
+                    set_hidden_property('int', 'vertices',
+                                        last_operator.properties.vertices)
+                    set_hidden_property('float', 'radius',
+                                        last_operator.properties.radius)
+                    set_hidden_property(
+                        'str', 'fill', last_operator.properties.fill_type)
                 case 'Add Cylinder' | 'Tweak Cylinder':
                     set_hidden_property('str', 'ob_type', 'cylinder')
-                    set_hidden_property('bool', 'uv', last_operator.properties.calc_uvs)
-                    set_hidden_property('int', 'vertices', last_operator.properties.vertices)
-                    set_hidden_property('float', 'radius', last_operator.properties.radius)
-                    set_hidden_property('float', 'depth', last_operator.properties.depth)
-                    set_hidden_property('str', 'fill', last_operator.properties.end_fill_type)
+                    set_hidden_property('int', 'vertices',
+                                        last_operator.properties.vertices)
+                    set_hidden_property('float', 'radius',
+                                        last_operator.properties.radius)
+                    set_hidden_property(
+                        'float', 'depth', last_operator.properties.depth)
+                    set_hidden_property(
+                        'str', 'fill', last_operator.properties.end_fill_type)
                 case 'Add Cone' | 'Tweak Cone':
                     set_hidden_property('str', 'ob_type', 'cone')
-                    set_hidden_property('bool', 'uv', last_operator.properties.calc_uvs)
-                    set_hidden_property('int', 'vertices', last_operator.properties.vertices)
-                    set_hidden_property('float', 'depth', last_operator.properties.depth)
-                    set_hidden_property('float', 'radius1', last_operator.properties.radius1)
-                    set_hidden_property('float', 'radius2', last_operator.properties.radius2)
-                    set_hidden_property('str', 'fill', last_operator.properties.end_fill_type)
+                    set_hidden_property('int', 'vertices',
+                                        last_operator.properties.vertices)
+                    set_hidden_property(
+                        'float', 'depth', last_operator.properties.depth)
+                    set_hidden_property('float', 'radius1',
+                                        last_operator.properties.radius1)
+                    set_hidden_property('float', 'radius2',
+                                        last_operator.properties.radius2)
+                    set_hidden_property(
+                        'str', 'fill', last_operator.properties.end_fill_type)
                 case 'Add Torus' | 'Tweak Torus':
                     set_hidden_property('str', 'ob_type', 'torus')
-                    set_hidden_property('bool', 'uv', last_operator.properties.generate_uvs)
-                    set_hidden_property('int', 'major_segments', last_operator.properties.major_segments)
-                    set_hidden_property('int', 'minor_segments', last_operator.properties.minor_segments)
-                    set_hidden_property('str', 'dimensions_mode', last_operator.properties.mode)
-                    set_hidden_property('float', 'major_radius', last_operator.properties.major_radius)
-                    set_hidden_property('float', 'minor_radius', last_operator.properties.minor_radius)
-                    set_hidden_property('float', 'abso_major_rad', last_operator.properties.abso_major_rad)
-                    set_hidden_property('float', 'abso_minor_rad', last_operator.properties.abso_minor_rad)
+                    set_hidden_property(
+                        'int', 'major_segments', last_operator.properties.major_segments)
+                    set_hidden_property(
+                        'int', 'minor_segments', last_operator.properties.minor_segments)
+                    set_hidden_property(
+                        'str', 'dimensions_mode', last_operator.properties.mode)
+                    set_hidden_property(
+                        'float', 'major_radius', last_operator.properties.major_radius)
+                    set_hidden_property(
+                        'float', 'minor_radius', last_operator.properties.minor_radius)
+                    set_hidden_property(
+                        'float', 'abso_major_rad', last_operator.properties.abso_major_rad)
+                    set_hidden_property(
+                        'float', 'abso_minor_rad', last_operator.properties.abso_minor_rad)
                 case 'Add Ico Sphere' | 'Tweak Ico Sphere':
                     set_hidden_property('str', 'ob_type', 'icosphere')
-                    set_hidden_property('bool', 'uv', last_operator.properties.calc_uvs)
-                    set_hidden_property('int', 'subdivisions', last_operator.properties.subdivisions)
-                    set_hidden_property('float', 'radius', last_operator.properties.radius)
+                    set_hidden_property(
+                        'int', 'subdivisions', last_operator.properties.subdivisions)
+                    set_hidden_property('float', 'radius',
+                                        last_operator.properties.radius)
                 case 'Add UV Sphere' | 'Tweak UV Sphere':
                     set_hidden_property('str', 'ob_type', 'sphere')
-                    set_hidden_property('bool', 'uv', last_operator.properties.calc_uvs)
-                    set_hidden_property('int', 'segments', last_operator.properties.segments)
-                    set_hidden_property('int', 'rings', last_operator.properties.ring_count)
-                    set_hidden_property('float', 'radius', last_operator.properties.radius)
+                    set_hidden_property('int', 'segments',
+                                        last_operator.properties.segments)
+                    set_hidden_property(
+                        'int', 'rings', last_operator.properties.ring_count)
+                    set_hidden_property('float', 'radius',
+                                        last_operator.properties.radius)
                 case _:
                     return
-            # Shared properties
-            set_hidden_property('str', 'align', last_operator.properties.align)
 
         # It's a primitive object since it has the ob_type property and transform was applied
         elif last_operator.name == 'Apply Object Transform':
@@ -130,26 +146,38 @@ def on_primitive_object_create_or_edit(dummy) -> None:
                         set_hidden_property('vector', 'applied_rot',
                                             (ob.rotation_euler.to_matrix() @ Euler(rot).to_matrix()).to_euler())
                     else:
-                        set_hidden_property('vector', 'applied_rot', ob.rotation_euler.copy())
+                        set_hidden_property(
+                            'vector', 'applied_rot', ob.rotation_euler.copy())
 
                 if applied_scale:  # Recalculate radius and depth
                     match ob['reprimitive_ob_type']:
                         case 'circle' | 'sphere' | 'icosphere':
-                            ob['reprimitive_radius'] = ob.scale[0] * ob['reprimitive_radius']
+                            ob['reprimitive_radius'] = ob.scale[0] * \
+                                ob['reprimitive_radius']
                         case 'cylinder':
-                            ob['reprimitive_radius'] = ob.scale[0] * ob['reprimitive_radius']
-                            ob['reprimitive_depth'] = ob.scale[2] * ob['reprimitive_depth']
+                            ob['reprimitive_radius'] = ob.scale[0] * \
+                                ob['reprimitive_radius']
+                            ob['reprimitive_depth'] = ob.scale[2] * \
+                                ob['reprimitive_depth']
                         case 'cone':
-                            ob['reprimitive_radius1'] = ob.scale[0] * ob['reprimitive_radius1']
-                            ob['reprimitive_radius2'] = ob.scale[0] * ob['reprimitive_radius2']
-                            ob['reprimitive_depth'] = ob.scale[2] * ob['reprimitive_depth']
+                            ob['reprimitive_radius1'] = ob.scale[0] * \
+                                ob['reprimitive_radius1']
+                            ob['reprimitive_radius2'] = ob.scale[0] * \
+                                ob['reprimitive_radius2']
+                            ob['reprimitive_depth'] = ob.scale[2] * \
+                                ob['reprimitive_depth']
                         case 'torus':
-                            ob['reprimitive_major_radius'] = ob.scale[0] * ob['reprimitive_major_radius']
-                            ob['reprimitive_minor_radius'] = ob.scale[0] * ob['reprimitive_minor_radius']
-                            ob['reprimitive_abso_major_rad'] = ob.scale[0] * ob['reprimitive_abso_major_rad']
-                            ob['reprimitive_abso_minor_ad'] = ob.scale[0] * ob['reprimitive_abso_minor_ad']
+                            ob['reprimitive_major_radius'] = ob.scale[0] * \
+                                ob['reprimitive_major_radius']
+                            ob['reprimitive_minor_radius'] = ob.scale[0] * \
+                                ob['reprimitive_minor_radius']
+                            ob['reprimitive_abso_major_rad'] = ob.scale[0] * \
+                                ob['reprimitive_abso_major_rad']
+                            ob['reprimitive_abso_minor_ad'] = ob.scale[0] * \
+                                ob['reprimitive_abso_minor_ad']
 
-                bpy.ops.object.transform_apply(location=applied_loc, rotation=applied_rot, scale=applied_scale)
+                bpy.ops.object.transform_apply(
+                    location=applied_loc, rotation=applied_rot, scale=applied_scale)
 
 
 def register():
@@ -172,7 +200,7 @@ def register():
             addon_keymaps.append((km, kmi))
 
     # Registering the handler
-    bpy.app.handlers.depsgraph_update_post.append(on_primitive_object_create_or_edit)
+    # bpy.app.handlers.depsgraph_update_post.append(on_primitive_object_create_or_edit)
 
     # Registering menu in Object dropdown menu
     bpy.types.VIEW3D_MT_object.append(menu_func)
@@ -191,7 +219,8 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     # Removing the handler
-    bpy.app.handlers.depsgraph_update_post.remove(on_primitive_object_create_or_edit)
+    bpy.app.handlers.depsgraph_update_post.remove(
+        on_primitive_object_create_or_edit)
 
     # Registering menu from Object dropdown
     bpy.types.VIEW3D_MT_object.remove(menu_func)
