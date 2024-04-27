@@ -2,20 +2,14 @@ import bpy
 import bmesh
 import numpy as np
 
-from bpy.types import Object
 from mathutils import Vector, Euler, Matrix
 from bpy.app import version
 
 # TODO Reapply loop cuts
-# TODO Linked objects
-# TODO Cylinder location
-# TODO Cone calc properties
+# TODO improvements to get_object_type
+# TODO all selected objects bpy.context.selected_objects
 
-
-TOLERANCE = 1e-5
-CUBE_NAME = "cube_to_delete_123#"
-
-
+# TOLERANCE = 1e-5
 # def floats_are_same(f1: float, f2: float) -> bool:
 #     """ Check if two floats are the same within a certain tolerance """
 #     return abs(f1 - f2) <= TOLERANCE
@@ -25,20 +19,34 @@ def vector_distance(point1: Vector, point2: Vector) -> float:
     return (point2 - point1).length
 
 
-def vectors_are_same(point1: Vector, point2: Vector) -> bool:
+def vectors_are_same(point1: Vector, point2: Vector, TOLERANCE: float = 1e-5) -> bool:
     """ Check if two vectors are the same within a certain tolerance """
     return vector_distance(point1, point2) <= TOLERANCE
 
 
-def get_object_property(ob: Object, key: str, default: str | int | float | bool = None) -> str | int | float | bool | Euler:
+def set_hidden_property(property_type: str, name: str, value: str | int | float | bool | Euler) -> None:
+    """ Adds a hidden property to the active object """
+    ob = bpy.context.object
+    name = 'reprimitive_' + name
+
+    match property_type:
+        case 'str':
+            prop = bpy.props.StringProperty(options={'HIDDEN'})
+        case 'int':
+            prop = bpy.props.IntProperty(options={'HIDDEN'})
+        case 'float':
+            prop = bpy.props.FloatProperty(options={'HIDDEN'})
+        case 'bool':
+            prop = bpy.props.BoolProperty(options={'HIDDEN'})
+        case 'vector':
+            prop = bpy.props.FloatVectorProperty(options={'HIDDEN'})
+
+    setattr(bpy.types.Object, name, prop)
+    setattr(ob, name, value)
+
+
+def get_object_property(ob: bpy.types.Object, key: str, default: str | int | float | bool = None) -> str | int | float | bool | Euler:
     return ob.get('reprimitive_'+key, default)
-
-
-def get_object_rotation(ob: Object) -> Euler:
-    """ Gets the object true rotation in case it was applied by multiplying the object rotation with the applied rotation, otherwise just gets the current rotation """
-    if (rot := get_object_property(ob, 'applied_rot')):
-        return (ob.rotation_euler.to_matrix() @ Euler(rot).to_matrix()).to_euler()
-    return ob.rotation_euler.copy()
 
 
 def set_origin(origin: Vector) -> None:
@@ -59,16 +67,51 @@ def save_and_unparent_children(children: list[bpy.types.Object]) -> list[bpy.typ
     return children
 
 
-def reparent(child: Object, parent: Object) -> None:
+def reparent(child: bpy.types.Object, parent: bpy.types.Object) -> None:
     """ Add self as a parent to the child again and keep its transforms """
     child.parent = parent
     child.matrix_parent_inverse = parent.matrix_world.inverted()
 
 
-def copy_modifiers_and_delete_original(original_ob: Object, new_ob: Object, difference: Vector) -> None:
+def replace_object(**kwargs) -> None:
+    """ Replaces the currently selected object with a new one of the same type and properties """
+    original_ob = bpy.context.object
+    difference = kwargs.pop('difference')
+    location = kwargs.pop('location') + difference
+
+    if kwargs.get('align') == 'VIEW':
+        # Remove rotation so the operator aligns the object to view and not to the rotation
+        kwargs.pop('rotation')
+
+    ob_type = kwargs.pop('ob_type')
+    match ob_type:
+        case 'circle':
+            bpy.ops.mesh.primitive_circle_add(location=location, **kwargs)
+        case 'cone':
+            bpy.ops.mesh.primitive_cone_add(location=location, **kwargs)
+        case 'cylinder':
+            bpy.ops.mesh.primitive_cylinder_add(location=location, **kwargs)
+        case 'icosphere':
+            bpy.ops.mesh.primitive_ico_sphere_add(location=location, **kwargs)
+        case 'torus':
+            bpy.ops.mesh.primitive_torus_add(location=location, **kwargs)
+        case 'sphere':
+            bpy.ops.mesh.primitive_uv_sphere_add(location=location, **kwargs)
+
+    new_ob = bpy.context.active_object
+    copy_data(original_ob, new_ob, difference)
+    delete_and_copy_name(original_ob, new_ob)
+
+
+def delete_and_copy_name(original_ob: bpy.types.Object, new_ob: bpy.types.Object) -> None:
     name = original_ob.name
     mesh_name = original_ob.data.name
+    bpy.data.meshes.remove(bpy.data.meshes[mesh_name])
+    new_ob.name = name
+    new_ob.data.name = mesh_name
 
+
+def copy_data(original_ob: bpy.types.Object, new_ob: bpy.types.Object, difference: Vector) -> None:
     # As of 4.1 and higher auto_smooth was removed
     if version >= (4, 1, 0):
         if original_ob.data.polygons and original_ob.data.polygons[0].use_smooth:
@@ -100,9 +143,7 @@ def copy_modifiers_and_delete_original(original_ob: Object, new_ob: Object, diff
     bpy.ops.object.make_links_data(type='MODIFIERS')
     bpy.ops.object.make_links_data(type='MATERIAL')
 
-    # Select the newly created object
-    new_ob.select_set(True)
-    bpy.context.view_layer.objects.active = new_ob
+    select_object(new_ob)
 
     # Move the new object in every collection the original object is in
     for coll in original_ob.users_collection:
@@ -123,42 +164,8 @@ def copy_modifiers_and_delete_original(original_ob: Object, new_ob: Object, diff
             continue
         new_ob[prop] = original_ob[prop]
 
-    # Delete the original object mesh, this will also delete the object, then copy the name
-    bpy.data.meshes.remove(bpy.data.meshes[mesh_name])
-    new_ob.name = name
-    new_ob.data.name = mesh_name
 
-
-def replace_object(**kwargs) -> None:
-    """ Replaces the currently selected object with a new one of the same type and properties """
-    original_ob = bpy.context.active_object
-    difference = kwargs.pop('difference')
-    location = kwargs.pop('location') + difference
-
-    if kwargs.get('align') == 'VIEW':
-        # Remove rotation so the operator aligns the object to view and not to the rotation
-        kwargs.pop('rotation')
-
-    ob_type = kwargs.pop('ob_type')
-    match ob_type:
-        case 'circle':
-            bpy.ops.mesh.primitive_circle_add(location=location, **kwargs)
-        case 'cone':
-            bpy.ops.mesh.primitive_cone_add(location=location, **kwargs)
-        case 'cylinder':
-            bpy.ops.mesh.primitive_cylinder_add(location=location, **kwargs)
-        case 'icosphere':
-            bpy.ops.mesh.primitive_ico_sphere_add(location=location, **kwargs)
-        case 'torus':
-            bpy.ops.mesh.primitive_torus_add(location=location, **kwargs)
-        case 'sphere':
-            bpy.ops.mesh.primitive_uv_sphere_add(location=location, **kwargs)
-
-    new_ob = bpy.context.active_object
-    copy_modifiers_and_delete_original(original_ob, new_ob, difference)
-
-
-def fill_face(ob: Object) -> int:
+def fill_face(ob: bpy.types.Object) -> int:
     """ Fills in the missing faces of an object, returns how many faces we filled """
 
     original_mode = bpy.context.object.mode
@@ -177,15 +184,13 @@ def fill_face(ob: Object) -> int:
     return len(ob.data.polygons) - faces
 
 
-def delete_filled(ob: Object, difference: int) -> None:
+def delete_filled(ob: bpy.types.Object, difference: int) -> None:
     """ Deletes the filled in faces, sharp tipped cone and circle have 1 filled, cylinder and cylindrical cone have 2 """
 
     if not difference:
         return
 
-    # Make the object active
-    bpy.context.view_layer.objects.active = ob
-    ob.select_set(True)
+    select_object(ob)
 
     # Store original mode, enter edit mode and delete select filled faces
     original_mode = bpy.context.object.mode
@@ -201,7 +206,7 @@ def delete_filled(ob: Object, difference: int) -> None:
     bpy.ops.object.mode_set(mode=original_mode)
 
 
-def find_ob_type(ob: Object) -> str:
+def find_ob_type(ob: bpy.types.Object) -> str:
     # I'm not sure if this is possible to do without a bunch of if statements
     ob = bpy.context.object
     ob_type = ''
@@ -282,17 +287,23 @@ def find_ob_type(ob: Object) -> str:
     return ob_type
 
 
-def calculate_object_location_and_difference(ob: Object) -> tuple[Vector, Vector]:
+def calculate_object_location_and_difference(ob: bpy.types.Object) -> tuple[Vector, Vector]:
     """ Returns object origin and how far it's from it """
+    selected = bpy.context.object
+
     origin = ob.matrix_world.translation.copy()
+    select_object(ob)
     bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='MEDIAN')
     true_loc = ob.location.copy()
     set_origin(origin)
 
+    bpy.ops.object.select_all(action='DESELECT')
+    select_object(selected)
+
     return origin, true_loc - origin
 
 
-def calculate_cone_location_and_difference(ob: Object, **kwargs) -> tuple[Vector, Vector]:
+def calculate_cone_location_and_difference(ob: bpy.types.Object, **kwargs) -> tuple[Vector, Vector]:
     """ Because origin to geometry doesn't work for cones we have to spawn another cone that looks exactly the same and compare the distance between the verts """
 
     # Save the scale and clear it, we need the scale to be 1,1,1 to get the correct distance between the objects
@@ -306,16 +317,15 @@ def calculate_cone_location_and_difference(ob: Object, **kwargs) -> tuple[Vector
     difference = (ob.matrix_world @ ob.data.vertices[0].co) - (
         twin_ob.matrix_world @ twin_ob.data.vertices[0].co)
 
-    # Delete twin object, reselect the original and restore the scale
+    # Delete twin object, restore scale and reselect the original object
     bpy.data.meshes.remove(bpy.data.meshes[twin_ob.data.name])
-    ob.select_set(True)
     ob.scale = saved_scale
-    bpy.context.view_layer.objects.active = ob
+    select_object(ob)
 
     return original_origin, difference
 
 
-def calculate_object_rotation(original_ob: Object, **kwargs) -> Euler:
+def calculate_object_rotation(original_ob: bpy.types.Object, **kwargs) -> Euler:
     ob_type = kwargs.pop('ob_type')
     match ob_type:
         case 'circle':
@@ -341,14 +351,13 @@ def calculate_object_rotation(original_ob: Object, **kwargs) -> Euler:
 
     # Delete the twin object and reselect the original one
     bpy.data.meshes.remove(bpy.data.meshes[new_ob.data.name])
-    bpy.context.view_layer.objects.active = original_ob
-    original_ob.select_set(True)
+    select_object(original_ob)
 
     return calculate_matching_rotation(face_verts_orig, face_verts_new)
 
 
-def get_any_face_verts_and_their_indices(ob: Object) -> tuple[list[Vector], list[int]]:
-    """ Gets the vertices world location of any face from the object and their indices """
+def get_any_face_verts_and_their_indices(ob: bpy.types.Object) -> tuple[list[Vector], list[int]]:
+    """ Gets the world location and indices of all vertices that make up any face """
     if not ob.data.polygons:  # Circle is the only object potentially without a face face, just get verts
         return [ob.matrix_world @ v.co for v in ob.data.vertices], [v.index for v in ob.data.vertices]
 
@@ -386,7 +395,7 @@ def calculate_matching_rotation(face_verts_orig: list[Vector], face_verts_new: l
 def calculate_cylinder_properties(ob: bpy.types.Object) -> tuple[float, float, int, str]:
     """ Calculates radius, depth, cap type and number of verts """
 
-    enter_edit_mode_and_deselect_all()
+    deselect_all_verts()
 
     # Selecting entire ring from 2 verts doesn't work in these 2 cases, so just select the verts manually
     if len(ob.data.vertices) == 6:
@@ -417,7 +426,6 @@ def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, float
 
     total_verts = len(ob.data.vertices)
     total_faces = len(ob.data.polygons)
-    enter_edit_mode_and_deselect_all()
 
     if is_sharp_tipped(ob):
         if total_verts == total_faces:
@@ -427,9 +435,9 @@ def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, float
         else:
             fill_type = 'TRIFAN'
 
-        if total_verts == 4:
+        if total_verts == 4:  # Three sided pyramid with ngon or nothing fill
             select_verts(ob, [0, 1, 2])
-        elif total_verts == 5:
+        elif total_verts == 5 and total_faces == 4:  # Four sided pyramid with ngon or nothing fill
             select_verts(ob, [0, 1, 2, 3])
         else:
             # 0th vert is potentially a middle vert so skip it
@@ -450,33 +458,32 @@ def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, float
     else:
         if total_verts == 6:
             select_verts(ob, [0, 2, 4])
-        elif total_verts == 8 and len(ob.data.polygons) == 6:
+        elif total_verts == 8 and total_faces == 6:
             select_verts(ob, [0, 2, 4, 6])
         else:  # Select 2 neighbouring verts on the base and use them to select the entire ring
             select_ring_from_verts(ob, [2, 4])
         selected_bottom = get_selected_verts(ob)
+        center_bottom = calculate_center(selected_bottom)
+        radius_bottom = calculate_radius(selected_bottom, center_bottom)
 
-        # Now we have to find the top verts
-        enter_edit_mode_and_deselect_all()
+        # Now do the same but for top verts
         if total_verts == 6:
             select_verts(ob, [1, 3, 5])
-        elif total_verts == 8 and len(ob.data.polygons) == 6:
+        elif total_verts == 8 and total_faces == 6:
             select_verts(ob, [1, 3, 5, 7])
         else:  # Select 2 neighbouring verts on the base and use them to select the entire ring
             select_ring_from_verts(ob, [3, 5])
         selected_top = get_selected_verts(ob)
-
-        center_bottom = calculate_center(selected_bottom)
         center_top = calculate_center(selected_top)
-        radius_bottom = calculate_radius(ob, center_bottom)
-        radius_top = calculate_radius(ob, center_top)
+        radius_top = calculate_radius(selected_top, center_top)
+
         depth = vector_distance(center_bottom, center_top)
         # Any of them is fine since both top and bottom have the same amount of verts
         verts = len(selected_top)
 
-        if len(selected_top) == total_faces:
+        if verts == total_faces:
             fill_type = 'NOTHING'
-        elif len(selected_top) == total_verts/2:
+        elif verts == total_verts/2:
             fill_type = 'NGON'
         else:
             fill_type = 'TRIFAN'
@@ -484,7 +491,7 @@ def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, float
     return radius_bottom, radius_top, depth, verts, fill_type
 
 
-def is_sharp_tipped(ob: Object) -> bool:
+def is_sharp_tipped(ob: bpy.types.Object) -> bool:
     """ Check if a cone is sharp tipped or not by checking if all 3 verts(3,4,5) are on the same bottom ring 
         The reason why those 3 specifically is because first 2 verts are potentially middle verts in a cap
         This works because Blender always has the same order of verts in primitives """
@@ -510,7 +517,7 @@ def calculate_center(verts: list[Vector]) -> Vector:
     return sum(verts, Vector()) / len(verts)
 
 
-def calculate_radius(input_data: Object | list[Vector], center: Vector = None) -> float:
+def calculate_radius(input_data: bpy.types.Object | list[Vector], center: Vector = None) -> float:
     """ Calculate the radius by calculating the center first and then finding the distance to any of the ring verts
         If it's an object use all the verts 
         Optional center parameter so we don't have to calculate it twice """
@@ -531,17 +538,18 @@ def calculate_radius(input_data: Object | list[Vector], center: Vector = None) -
     return round(vector_distance(center, edge_vert), 5)
 
 
-def enter_edit_mode_and_deselect_all() -> None:
+def deselect_all_verts() -> None:
     bpy.ops.object.editmode_toggle()
     bpy.ops.mesh.select_all(action='DESELECT')
     bpy.ops.object.editmode_toggle()
 
 
-def get_selected_verts(ob: Object) -> list[Vector]:
+def get_selected_verts(ob: bpy.types.Object) -> list[Vector]:
     return [v.co for v in ob.data.vertices if v.select]
 
 
-def select_verts(ob: Object, indices: list[int]) -> None:
+def select_verts(ob: bpy.types.Object, indices: list[int]) -> None:
+    deselect_all_verts()
     for idx in indices:
         ob.data.vertices[idx].select = True
 
@@ -552,11 +560,52 @@ def select_entire_ring() -> None:
     bpy.ops.object.editmode_toggle()
 
 
-def select_ring_from_verts(ob: Object, vert_indices: list[int]) -> None:
-    enter_edit_mode_and_deselect_all()
+def select_ring_from_verts(ob: bpy.types.Object, vert_indices: list[int]) -> None:
     select_verts(ob, vert_indices)
     select_entire_ring()
 
 
-def calculate_sphere_segments(ob: Object) -> int:
+def calculate_sphere_segments(ob: bpy.types.Object) -> int:
     return len(ob.data.polygons) - (len(ob.data.vertices)-2)
+
+
+def get_linked_objects(ob: bpy.types.Object) -> list[bpy.types.Object]:
+    return [obj for obj in bpy.context.scene.objects if obj.data == ob.data and obj != ob]
+
+
+def select_object(ob: bpy.types.Object) -> None:
+    ob.select_set(True)
+    bpy.context.view_layer.objects.active = ob
+
+
+def create_linked_ob_at_location(ob: bpy.types.Object, location):
+    bpy.ops.object.duplicate(linked=True)
+
+    duplicate = bpy.context.object
+    duplicate.location = location
+    duplicate.select_set(False)
+
+    select_object(ob)
+
+
+def draw_buttons(box: bpy.types.UILayout, operator: str) -> None:
+    row = box.row()
+    split = row.split(factor=0.33)
+    split.label(text="")
+    split.operator(operator, text="4").vertices = 4
+    split.label(text="")
+
+    row = box.row()
+    row.operator(operator, text="6").vertices = 6
+    row.operator(operator, text="8").vertices = 8
+    row.operator(operator, text="12").vertices = 12
+
+    row = box.row()
+    row.operator(operator, text="16").vertices = 16
+    row.operator(operator, text="24").vertices = 24
+    row.operator(operator, text="32").vertices = 32
+
+    row = box.row()
+    row.operator(operator, text="64").vertices = 64
+    row.operator(operator, text="96").vertices = 96
+    row.operator(operator, text="128").vertices = 128

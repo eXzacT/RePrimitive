@@ -5,11 +5,6 @@ from . import addon_updater_ops
 
 
 class RePrimitivePanel(Panel):
-    """
-    Panel with 2 buttons, rotate and main reprimitive operator,
-    also has the update popup
-    """
-
     bl_idname = 'VIEW3D_PT_RePrimitive_Panel'
     bl_label = 'RePrimitive'
     bl_space_type = 'VIEW_3D'
@@ -28,15 +23,15 @@ class RePrimitivePanel(Panel):
         # Call to check for update in background.
         addon_updater_ops.check_for_update_background()
 
-        # Rotate button
+        # RePrimitive pie menu button
         row = layout.row()
         row.scale_y = 1.6
-        row.operator("object.fix_applied_rotation", text="Fix Rotation")
+        row.operator("object.reprimitive_pie", text="RePrimitive Pie Menu")
 
         # RePrimitive button
         row = layout.row()
         row.scale_y = 1.6
-        row.operator("object.reprimitive", text="RePrimitive")
+        row.operator("object.reprimitive_auto", text="RePrimitive")
 
         # Call built-in function with draw code/checks.
         addon_updater_ops.update_notice_box_ui(self, context)

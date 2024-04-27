@@ -8,8 +8,6 @@ import rna_keymap_ui
 class RePrimitivePrefs(AddonPreferences):
     bl_idname = __package__
 
-    # Addon updater preferences.
-
     auto_check_update = BoolProperty(
         name="Auto-check for Update",
         description="If enabled, auto-check for updates using an interval",
