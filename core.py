@@ -1,25 +1,26 @@
 import bpy
 import bmesh
 import numpy as np
+from math import cos, atan
 
 from mathutils import Vector, Euler, Matrix
 from bpy.app import version
 
-# TODO Reapply loop cuts
-# TODO improvements to get_object_type
 # TODO all selected objects bpy.context.selected_objects
 
-# TOLERANCE = 1e-5
-# def floats_are_same(f1: float, f2: float) -> bool:
-#     """ Check if two floats are the same within a certain tolerance """
-#     return abs(f1 - f2) <= TOLERANCE
+TOLERANCE = 1e-5
+
+
+def floats_are_same(f1: float, f2: float) -> bool:
+    """ Check if two floats are the same within a certain tolerance """
+    return abs(f1 - f2) <= TOLERANCE
 
 
 def vector_distance(point1: Vector, point2: Vector) -> float:
     return (point2 - point1).length
 
 
-def vectors_are_same(point1: Vector, point2: Vector, TOLERANCE: float = 1e-5) -> bool:
+def vectors_are_same(point1: Vector, point2: Vector) -> bool:
     """ Check if two vectors are the same within a certain tolerance """
     return vector_distance(point1, point2) <= TOLERANCE
 
@@ -77,6 +78,7 @@ def replace_object(**kwargs) -> None:
     """ Replaces the currently selected object with a new one of the same type and properties """
     original_ob = bpy.context.object
     difference = kwargs.pop('difference')
+    cut_heights = kwargs.pop('cut_heights', [])
     location = kwargs.pop('location') + difference
 
     if kwargs.get('align') == 'VIEW':
@@ -99,6 +101,8 @@ def replace_object(**kwargs) -> None:
             bpy.ops.mesh.primitive_uv_sphere_add(location=location, **kwargs)
 
     new_ob = bpy.context.active_object
+    insert_loop_cuts(new_ob, cut_heights)
+
     copy_data(original_ob, new_ob, difference)
     delete_and_copy_name(original_ob, new_ob)
 
@@ -120,7 +124,7 @@ def copy_data(original_ob: bpy.types.Object, new_ob: bpy.types.Object, differenc
         if original_ob.data.use_auto_smooth:
             bpy.ops.object.shade_smooth(
                 use_auto_smooth=True, auto_smooth_angle=original_ob.data.auto_smooth_angle)
-        else:  # Didn't have autosmooth but polygons are still smooth, use shade smooth without default variables
+        else:  # Didn't have autosmooth but polygons are still smooth, use shade smooth, not auto_smooth
             if original_ob.data.polygons and original_ob.data.polygons[0].use_smooth:
                 bpy.ops.object.shade_smooth()
 
@@ -165,126 +169,45 @@ def copy_data(original_ob: bpy.types.Object, new_ob: bpy.types.Object, differenc
         new_ob[prop] = original_ob[prop]
 
 
-def fill_face(ob: bpy.types.Object) -> int:
-    """ Fills in the missing faces of an object, returns how many faces we filled """
+# def fill_face(ob: bpy.types.Object) -> int:
+#     """ Fills in the missing faces of an object, returns how many faces we filled """
 
-    original_mode = bpy.context.object.mode
-    faces = len(ob.data.polygons)
-    bpy.ops.object.mode_set(mode='EDIT')
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
+#     original_mode = bpy.context.object.mode
+#     faces = len(ob.data.polygons)
+    # bm = bmesh.new()
+#     bm.from_mesh(ob.data)
 
-    # Fill holes and update the mesh then return to original mode
-    bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.fill_holes(sides=0)
-    bpy.ops.mesh.select_all(action='DESELECT')
-    ob.update_from_editmode()
-    bpy.ops.object.mode_set(mode=original_mode)
+#     # Fill holes and update the mesh then return to original mode
+#     bpy.ops.object.mode_set(mode='EDIT')
+#     bpy.ops.mesh.select_all(action='SELECT')
+#     bpy.ops.mesh.fill_holes(sides=0)
+#     bpy.ops.mesh.select_all(action='DESELECT')
+#     ob.update_from_editmode()
+#     bpy.ops.object.mode_set(mode=original_mode)
 
-    return len(ob.data.polygons) - faces
-
-
-def delete_filled(ob: bpy.types.Object, difference: int) -> None:
-    """ Deletes the filled in faces, sharp tipped cone and circle have 1 filled, cylinder and cylindrical cone have 2 """
-
-    if not difference:
-        return
-
-    select_object(ob)
-
-    # Store original mode, enter edit mode and delete select filled faces
-    original_mode = bpy.context.object.mode
-    bpy.ops.object.mode_set(mode='EDIT')
-    bm = bmesh.from_edit_mesh(ob.data)
-    bm.faces.ensure_lookup_table()
-    bm.faces[-1].select_set(True)
-    if difference == 2:
-        bm.faces[-2].select_set(True)
-
-    # Delete them and restore original mode
-    bpy.ops.mesh.delete(type='ONLY_FACE')
-    bpy.ops.object.mode_set(mode=original_mode)
+#     return len(ob.data.polygons) - faces
 
 
-def find_ob_type(ob: bpy.types.Object) -> str:
-    # I'm not sure if this is possible to do without a bunch of if statements
-    ob = bpy.context.object
-    ob_type = ''
+# def delete_filled(ob: bpy.types.Object, difference: int) -> None:
+#     """ Deletes the filled in faces, sharp tipped cone and circle have 1 filled, cylinder and cylindrical cone have 2 """
 
-    # Fill face fills in a face for circle with trifan cap so I need this extra check in the beginning
-    # Perhaps I can find a better way to fill faces
-    if ob.data.polygons and all(vectors_are_same(f.normal, ob.data.polygons[0].normal) for f in ob.data.polygons):
-        ob_type = 'circle'
-        filled = 0
-    else:
-        # Remember how many faces the object has before filling holes(only cone, cylinder, circle)
-        filled = fill_face(ob)
-        faces = len(ob.data.polygons)
+#     if not difference:
+#         return
 
-        # If the object has all quads it's most likely a torus
-        if all(len(f.vertices) == 4 for f in ob.data.polygons):
-            if faces == 1:  # Edge case circle with 4 verts
-                ob_type = 'circle'
-            elif faces == 6:  # Edge case cuboid
-                ob_type = 'cylinder'
-            else:
-                ob_type = 'torus'
-        # If the object has all triangles it's an icosphere or a cone/circle with trifan cap
-        elif all(len(f.vertices) == 3 for f in ob.data.polygons):
-            if faces+1 == len(ob.data.vertices) or faces == 1:
-                ob_type = 'circle'
-            elif faces == 4 or faces == 6:  # Edge case pyramid with ngon cap or trifan cap
-                ob_type = 'cone'
-            else:
-                # Get the number of edges for each vertex
-                bm = bmesh.new()
-                bm.from_mesh(ob.data)
-                unique_vert_edges = list(
-                    set(len(v.link_edges) for v in bm.verts))
+#     select_object(ob)
 
-                # For icosphere some verts have 5 edges, some have 6, so their difference will be 1
-                if abs(unique_vert_edges[0]-unique_vert_edges[1]) == 1:
-                    ob_type = 'icosphere'
-                else:
-                    ob_type = 'cone'
-                    # ob["sharp_tipped"] = True
+#     # Store original mode, enter edit mode and delete select filled faces
+#     original_mode = bpy.context.object.mode
+#     bpy.ops.object.mode_set(mode='EDIT')
+#     bm = bmesh.from_edit_mesh(ob.data)
+#     bm.faces.ensure_lookup_table()
+#     bm.faces[-1].select_set(True)
+#     if difference == 2:
+#         bm.faces[-2].select_set(True)
 
-        # Has to be a circle, we filled the face and there's only 1
-        elif faces == 1:
-            ob_type = 'circle'
-        else:
-            ngons = [round(f.area, 4)
-                     for f in ob.data.polygons if len(f.vertices) > 4]
-            if len(ngons) == 1:
-                ob_type = 'cone'
-                # ob["sharp_tipped"] = True
-            # Could be either a cylinder or a cylindrical cone, but they have different areas
-            elif len(ngons) == 2:
-                if ngons[0] == ngons[1]:
-                    ob_type = 'cylinder'
-                else:
-                    ob_type = 'cone'
-            else:  # Could still be a cylinder/cone with trifan cap or sphere
-                quads = sum(
-                    1 for f in ob.data.polygons if len(f.vertices) == 4)
-                if quads == 3:  # Edge case cylinder with 5 faces, 3 of them will be quads and top/bottom caps will be triangles if trifan or triangle if ngon cap
-                    ob_type = 'cylinder'
-                elif (len(ob.data.vertices)-2) / 2 == faces/3:
-                    bm = bmesh.new()
-                    bm.from_mesh(ob.data)
-                    unique_edge_lengths = set(
-                        round(edge.calc_length(), 4) for edge in bm.edges)
-
-                    # Cone has 5 unique edge lengths when it has a trifan cap
-                    if len(unique_edge_lengths) == 5:
-                        ob_type = 'cone'
-                    else:
-                        ob_type = 'cylinder'
-                else:
-                    ob_type = 'sphere'
-
-    delete_filled(ob, filled)
-    return ob_type
+#     # Delete them and restore original mode
+#     bpy.ops.mesh.delete(type='ONLY_FACE')
+#     bpy.ops.object.mode_set(mode=original_mode)
 
 
 def calculate_object_location_and_difference(ob: bpy.types.Object) -> tuple[Vector, Vector]:
@@ -303,8 +226,11 @@ def calculate_object_location_and_difference(ob: bpy.types.Object) -> tuple[Vect
     return origin, true_loc - origin
 
 
-def calculate_cone_location_and_difference(ob: bpy.types.Object, **kwargs) -> tuple[Vector, Vector]:
-    """ Because origin to geometry doesn't work for cones we have to spawn another cone that looks exactly the same and compare the distance between the verts """
+def calculate_object_location_and_difference_no_origin_to_geometry(ob: bpy.types.Object, **kwargs) -> tuple[Vector, Vector]:
+    """ Because origin to geometry doesn't work for cones or objects with loop cuts we have to spawn another object that looks exactly the same and compare the distance between the verts """
+
+    cut_heights = kwargs.pop('cut_heights', [])
+    ob_type = kwargs.pop('ob_type')
 
     # Save the scale and clear it, we need the scale to be 1,1,1 to get the correct distance between the objects
     saved_scale = ob.scale.copy()
@@ -312,8 +238,16 @@ def calculate_cone_location_and_difference(ob: bpy.types.Object, **kwargs) -> tu
     original_origin = ob.matrix_world.translation.copy()
 
     # Add the exact same object and get the distances between 2 of their verts
-    bpy.ops.mesh.primitive_cone_add(location=original_origin, **kwargs)
+    match ob_type:
+        case 'cone':
+            bpy.ops.mesh.primitive_cone_add(location=original_origin, **kwargs)
+        case 'cylinder':
+            bpy.ops.mesh.primitive_cylinder_add(
+                location=original_origin, **kwargs)
+
     twin_ob = bpy.context.active_object
+    insert_loop_cuts(twin_ob, cut_heights)
+
     difference = (ob.matrix_world @ ob.data.vertices[0].co) - (
         twin_ob.matrix_world @ twin_ob.data.vertices[0].co)
 
@@ -327,6 +261,9 @@ def calculate_cone_location_and_difference(ob: bpy.types.Object, **kwargs) -> tu
 
 def calculate_object_rotation(original_ob: bpy.types.Object, **kwargs) -> Euler:
     ob_type = kwargs.pop('ob_type')
+    cut_heights = kwargs.pop('cut_heights', [])
+    sharp_tipped_cone = kwargs.pop('sharp_tipped', False)
+
     match ob_type:
         case 'circle':
             bpy.ops.mesh.primitive_circle_add(**kwargs)
@@ -342,27 +279,65 @@ def calculate_object_rotation(original_ob: bpy.types.Object, **kwargs) -> Euler:
             bpy.ops.mesh.primitive_uv_sphere_add(**kwargs)
 
     new_ob = bpy.context.active_object
+    insert_loop_cuts(new_ob, cut_heights)
 
-    # Get the vertices of any face from the original object and then get those same vertices from the new object
-    face_verts_orig, indices = get_any_face_verts_and_their_indices(
-        original_ob)
-    face_verts_new = [new_ob.matrix_world @
-                      new_ob.data.vertices[idx].co for idx in indices]
+    # I need to find a universal way to get the verts of the first face of any object if it's even possible
+    # By getting same verts of both objects we can calculate how the twin object should be rotated to match the original
+    if ob_type == 'sphere':
+        # Sphere has random face order but verts are always in the same order
+        # For example, faces 1 in object 1 and face 2 in object 2 are faces with same verts (1,2,3,4)
+        face_verts_orig, indices = get_first_face_verts_and_their_indices(
+            original_ob)
+        face_verts_new = [new_ob.matrix_world @
+                          new_ob.data.vertices[idx].co for idx in indices]
+    elif sharp_tipped_cone:  # Sharp tipped cone has random vert order when it has loop cuts
+        face_verts_orig, vert_count = get_cone_face(original_ob)
+        face_verts_new = get_cone_face(new_ob, vert_count)
+    else:  # Works for every other object
+        face_verts_orig, _ = get_first_face_verts_and_their_indices(
+            original_ob)
+        face_verts_new, _ = get_first_face_verts_and_their_indices(new_ob)
 
     # Delete the twin object and reselect the original one
     bpy.data.meshes.remove(bpy.data.meshes[new_ob.data.name])
     select_object(original_ob)
-
     return calculate_matching_rotation(face_verts_orig, face_verts_new)
 
 
-def get_any_face_verts_and_their_indices(ob: bpy.types.Object) -> tuple[list[Vector], list[int]]:
-    """ Gets the world location and indices of all vertices that make up any face """
+def get_first_face_verts_and_their_indices(ob: bpy.types.Object) -> tuple[list[Vector], list[int]]:
+    """ Gets the world location and indices of all vertices that make up a first face """
     if not ob.data.polygons:  # Circle is the only object potentially without a face face, just get verts
         return [ob.matrix_world @ v.co for v in ob.data.vertices], [v.index for v in ob.data.vertices]
 
     indices = ob.data.polygons[0].vertices
     return [ob.matrix_world @ ob.data.vertices[idx].co for idx in indices], indices
+
+
+def get_cone_face(ob: bpy.types.Object, face_vert_count: int = None) -> tuple[list[Vector], list[int]]:
+    """ Gets the world location and indices of all vertices that make up a first face """
+    if not ob.data.polygons:  # Circle is the only object potentially without a face face, just get verts
+        return [ob.matrix_world @ v.co for v in ob.data.vertices], [v.index for v in ob.data.vertices]
+
+    bm = bmesh.new()
+    bm = bm.from_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+
+    vert1 = bm.verts[0]
+    vert2 = bm.verts[1]
+
+    if face_vert_count:
+        # Get the faces that both vertices are a part of
+        faces = set(vert1.link_faces).intersection(vert2.link_faces)
+        for face in faces:
+            if len(face.verts) == face_vert_count:
+                return [ob.matrix_world @ v.co for v in face.verts]
+
+    # Get the first face that both vertices are a part of, also get total verts of that face
+    # We will use that vert count to get the same face from the other object because the order of faces might be different
+    face = list(set(vert1.link_faces).intersection(vert2.link_faces))[0]
+    total_verts = len(face.verts)
+
+    return [ob.matrix_world @ v.co for v in face.verts], total_verts
 
 
 def calculate_matching_rotation(face_verts_orig: list[Vector], face_verts_new: list[Vector]) -> Euler:
@@ -392,49 +367,48 @@ def calculate_matching_rotation(face_verts_orig: list[Vector], face_verts_new: l
     return Matrix(R.tolist()).to_euler()
 
 
-def calculate_cylinder_properties(ob: bpy.types.Object) -> tuple[float, float, int, str]:
-    """ Calculates radius, depth, cap type and number of verts """
+def calculate_cylinder_properties(ob: bpy.types.Object) -> tuple[int, list[float], float, float,  str]:
+    """ Calculates number of verts, loop cut height percentages, radius, depth and fill type """
 
+    total_verts = len(ob.data.vertices)
+    total_faces = len(ob.data.polygons)
     deselect_all_verts()
 
     # Selecting entire ring from 2 verts doesn't work in these 2 cases, so just select the verts manually
-    if len(ob.data.vertices) == 6:
+    if total_verts == 6:
         select_verts(ob, [0, 2, 4])
-    elif len(ob.data.vertices) == 8 and len(ob.data.polygons) == 6:
+    elif total_verts == 8 and total_faces:
         select_verts(ob, [0, 2, 4, 6])
     else:
         select_ring_from_verts(ob, [2, 4])
 
     selected = get_selected_verts(ob)
     radius = calculate_radius(selected)
+    verts = len(selected)
+    loop_cuts = total_verts//verts - 2  # Don't count top and bottom rings hence -2
 
     # Verts forming an edge from bottom to top are always subsequent
     depth = vector_distance(ob.data.vertices[0].co, ob.data.vertices[1].co)
 
-    if len(selected) == len(ob.data.polygons):
-        fill_type = 'NOTHING'
-    elif len(selected) == len(ob.data.vertices)/2:
-        fill_type = 'NGON'
-    else:
+    if verts * (loop_cuts+2) == total_verts-2:  # 2 extra verts means it's a trifan cap
         fill_type = 'TRIFAN'
+    # If the cylinder has 32 side faces, adding 2 loop cuts will make every side have 3 times as much faces
+    elif verts * (loop_cuts+1) == total_faces:
+        fill_type = 'NOTHING'
+    else:
+        fill_type = 'NGON'
 
-    return radius, depth, len(selected), fill_type
+    return verts, calculate_cylinder_height_percentages(ob, depth), radius, depth,  fill_type
 
 
-def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, float, int, str]:
-    """ Calculates radius, depth, cap type and number of verts """
+def calculate_cone_properties(ob: bpy.types.Object) -> tuple[bool, int, list[float], float, float, float, str]:
+    """ Calculates whether it's a sharp tipped cone, number of verts, loop cut height percentages, radius, depth, cap type and fill type """
 
     total_verts = len(ob.data.vertices)
     total_faces = len(ob.data.polygons)
+    deselect_all_verts()
 
     if is_sharp_tipped(ob):
-        if total_verts == total_faces:
-            fill_type = 'NGON'
-        elif total_faces == total_verts-1:
-            fill_type = 'NOTHING'
-        else:
-            fill_type = 'TRIFAN'
-
         if total_verts == 4:  # Three sided pyramid with ngon or nothing fill
             select_verts(ob, [0, 1, 2])
         elif total_verts == 5 and total_faces == 4:  # Four sided pyramid with ngon or nothing fill
@@ -450,49 +424,59 @@ def calculate_cone_properties(ob: bpy.types.Object) -> tuple[float, float, float
         center_bottom = calculate_center(selected_bottom)
         radius_bottom = calculate_radius(selected_bottom, center_bottom)
 
+        loop_cuts = total_verts//verts - 1  # Don't count the bottom ring hence -1
+        # Example 32 verts 0 loop cuts and trifan, that's 34 total
+        if verts * (loop_cuts+1) == total_verts-2:
+            fill_type = 'TRIFAN'
+        elif verts * (loop_cuts+1) == total_faces:
+            fill_type = 'NOTHING'
+        else:
+            fill_type = 'NGON'
+
         # The vert at the top has index that follows the last vert in the bottom ring
         top_index = verts + 1 if fill_type == 'TRIFAN' else verts
         depth = vector_distance(center_bottom, ob.data.vertices[top_index].co)
+        return True, verts, calculate_sharp_cone_cut_height_percentages(ob, radius_bottom, depth), radius_bottom, radius_top, depth,  fill_type
 
-    # Cylindrical
+    if total_verts == 6:
+        select_verts(ob, [0, 2, 4])
+    elif total_verts == 8 and total_faces == 6:
+        select_verts(ob, [0, 2, 4, 6])
+    else:  # Select 2 neighbouring verts on the base and use them to select the entire ring
+        select_ring_from_verts(ob, [2, 4])
+    selected_bottom = get_selected_verts(ob)
+    center_bottom = calculate_center(selected_bottom)
+    radius_bottom = calculate_radius(selected_bottom, center_bottom)
+
+    # Now do the same but for top verts
+    if total_verts == 6:
+        select_verts(ob, [1, 3, 5])
+    elif total_verts == 8 and total_faces == 6:
+        select_verts(ob, [1, 3, 5, 7])
+    else:  # Select 2 neighbouring verts on the base and use them to select the entire ring
+        select_ring_from_verts(ob, [3, 5])
+    selected_top = get_selected_verts(ob)
+    center_top = calculate_center(selected_top)
+    radius_top = calculate_radius(selected_top, center_top)
+
+    depth = vector_distance(center_bottom, center_top)
+    # Any of them is fine since both top and bottom have the same amount of verts
+    verts = len(selected_top)
+    loop_cuts = total_verts//verts - 2  # Don't count top and bottom rings hence -2
+
+    if verts * (loop_cuts+2) == total_verts-2:  # 2 extra verts means it's a trifan cap
+        fill_type = 'TRIFAN'
+    # If the cylindrical cone has 32 side faces, adding 2 loop cuts will make every side have 3 times as much faces
+    elif verts * (loop_cuts+1) == total_faces:
+        fill_type = 'NOTHING'
     else:
-        if total_verts == 6:
-            select_verts(ob, [0, 2, 4])
-        elif total_verts == 8 and total_faces == 6:
-            select_verts(ob, [0, 2, 4, 6])
-        else:  # Select 2 neighbouring verts on the base and use them to select the entire ring
-            select_ring_from_verts(ob, [2, 4])
-        selected_bottom = get_selected_verts(ob)
-        center_bottom = calculate_center(selected_bottom)
-        radius_bottom = calculate_radius(selected_bottom, center_bottom)
+        fill_type = 'NGON'
 
-        # Now do the same but for top verts
-        if total_verts == 6:
-            select_verts(ob, [1, 3, 5])
-        elif total_verts == 8 and total_faces == 6:
-            select_verts(ob, [1, 3, 5, 7])
-        else:  # Select 2 neighbouring verts on the base and use them to select the entire ring
-            select_ring_from_verts(ob, [3, 5])
-        selected_top = get_selected_verts(ob)
-        center_top = calculate_center(selected_top)
-        radius_top = calculate_radius(selected_top, center_top)
-
-        depth = vector_distance(center_bottom, center_top)
-        # Any of them is fine since both top and bottom have the same amount of verts
-        verts = len(selected_top)
-
-        if verts == total_faces:
-            fill_type = 'NOTHING'
-        elif verts == total_verts/2:
-            fill_type = 'NGON'
-        else:
-            fill_type = 'TRIFAN'
-
-    return radius_bottom, radius_top, depth, verts, fill_type
+    return False, verts, calculate_cylindrical_cone_cut_height_percentages(ob, radius_bottom, radius_top, depth), radius_bottom, radius_top, depth, fill_type
 
 
 def is_sharp_tipped(ob: bpy.types.Object) -> bool:
-    """ Check if a cone is sharp tipped or not by checking if all 3 verts(3,4,5) are on the same bottom ring 
+    """ Check if a cone is sharp tipped or not by checking if all 3 verts(3,4,5) are on the same bottom ring
         The reason why those 3 specifically is because first 2 verts are potentially middle verts in a cap
         This works because Blender always has the same order of verts in primitives """
 
@@ -519,7 +503,7 @@ def calculate_center(verts: list[Vector]) -> Vector:
 
 def calculate_radius(input_data: bpy.types.Object | list[Vector], center: Vector = None) -> float:
     """ Calculate the radius by calculating the center first and then finding the distance to any of the ring verts
-        If it's an object use all the verts 
+        If it's an object use all the verts
         Optional center parameter so we don't have to calculate it twice """
 
     if isinstance(input_data, list):
@@ -556,6 +540,7 @@ def select_verts(ob: bpy.types.Object, indices: list[int]) -> None:
 
 def select_entire_ring() -> None:
     bpy.ops.object.editmode_toggle()
+    bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
     bpy.ops.mesh.loop_multi_select(ring=False)
     bpy.ops.object.editmode_toggle()
 
@@ -609,3 +594,160 @@ def draw_buttons(box: bpy.types.UILayout, operator: str) -> None:
     row.operator(operator, text="64").vertices = 64
     row.operator(operator, text="96").vertices = 96
     row.operator(operator, text="128").vertices = 128
+
+
+def all_faces_have_x_verts(ob: bpy.types.Object, verts: int) -> bool:
+    return all(len(f.vertices) == verts for f in ob.data.polygons)
+
+
+def are_verts_part_of_same_face(bm, indices: list[int]) -> bool:
+    first_vert_faces = set(bm.verts[indices[0]].link_faces)
+    return all(any(face in first_vert_faces for face in bm.verts[idx].link_faces) for idx in indices[1:])
+
+
+def is_cone_or_circle(ob: bpy.types.Object) -> str:
+    """ Checks whether an object is a cone or a circle based on the normals of all its faces, circle needs to have a trifan cap"""
+    first_normal = ob.data.polygons[0].normal
+    return 'circle' if all(vectors_are_same(f.normal, first_normal) for f in ob.data.polygons) else 'cone'
+
+
+def is_sphere_or_cone(ob: bpy.types.Object) -> str:
+    """ Checks whether an object is a sphere or a cone based on the normals of all its faces, sphere needs to have a trifan cap"""
+    center = calculate_center([v.co for v in ob.data.vertices])
+    first_dist = vector_distance(ob.data.vertices[0].co, center)
+    return 'sphere' if all(floats_are_same(vector_distance(v.co, center), first_dist) for v in ob.data.vertices) else 'cone'
+
+
+def is_cone_or_cylinder(ob: bpy.types.Object) -> str:
+    """ Checks whether an object is a cone or a cylinder """
+    select_ring_from_verts(ob, [2, 4])
+    bottom_radius = calculate_radius(get_selected_verts(ob))
+    select_ring_from_verts(ob, [3, 5])
+    top_radius = calculate_radius(get_selected_verts(ob))
+
+    return 'cylinder' if bottom_radius == top_radius else 'cone'
+
+
+def find_ob_type(ob: bpy.types.Object) -> str:
+    # Spaghetti, can I improve this?
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+
+    verts_edge_count = {}
+    for v in bm.verts:
+        verts_edge_count[len(v.link_edges)] = verts_edge_count.get(
+            len(v.link_edges), 0)+1
+    have_common_face = are_verts_part_of_same_face(bm, [0, 1])
+
+    if len(verts_edge_count) == 3:  # cone with loop cuts
+        return 'cone'
+
+    if len(verts_edge_count) == 2:
+        if verts_edge_count.get(5) == 12:
+            return 'icosphere'
+        for edge_count, verts in verts_edge_count.items():
+            if edge_count != 4:
+                if verts == 2:
+                    if all_faces_have_x_verts(ob, 3):  # TRIFAN cone
+                        return 'cone'
+                    elif have_common_face:
+                        return is_sphere_or_cone(ob)
+                    else:  # TRIFAN cylinder or TRIFAN cylindrical cone
+                        return is_cone_or_cylinder(ob)
+                # ngon/no fill cylinder/cone with loop cuts
+                if verts_edge_count.get(4, False):
+                    return is_cone_or_cylinder(ob)
+        # Trifan circle or a ngon/nothing sharp tipped cone
+        if any([key == 3 for key in verts_edge_count.keys()]):
+            return is_cone_or_circle(ob)
+
+    if len(verts_edge_count) == 1:
+        edges = list(verts_edge_count.keys())[0]
+        if edges == 5:  # 1 subdivision icosphere
+            return 'icosphere'
+        # Every vert has 4 edges and every polygon is a quad
+        if edges == 4:
+            if all_faces_have_x_verts(ob, 4):
+                return 'torus'
+            elif have_common_face:
+                return is_sphere_or_cone(ob)
+            else:  # TRIFAN cylinder or cone with 4 sides
+                return is_cone_or_cylinder(ob)
+        if edges == 3:
+            if len(ob.data.vertices) == 4:  # TRIFAN circle with 3 sides or a cylinder with 3 sides
+                return is_cone_or_circle(ob)
+            return is_cone_or_cylinder(ob)  # No fill or ngon cylinder/cone
+        if edges == 2:  # No fill or ngon circle
+            return 'circle'
+
+    return 'unknown'
+
+
+def calculate_cylindrical_cone_cut_height_percentages(ob: bpy.types.Object, bottom_radius: float, top_radius: float, height: float) -> list[float]:
+    """ Calculate the height percentages of the loop cuts by selecting 1 entire side, there's going to be 2 verts minimum(bottom and top), we will ignore those """
+
+    deselect_all_verts()
+    # Select top and bottom vert then all the verts between them
+    ob.data.vertices[0].select = True
+    ob.data.vertices[1].select = True
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.shortest_path_select(edge_mode='SELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    angle = atan((bottom_radius - top_radius) / height)
+
+    return sorted([(vector_distance(v.co, ob.data.vertices[0].co) * cos(angle)) / height for v in ob.data.vertices if v.select])[1:-1]
+
+
+def calculate_sharp_cone_cut_height_percentages(ob: bpy.types.Object, radius: float, height: float) -> list[float]:
+    """ Calculate the height percentages of the loop cuts by selecting 1 entire side, there's going to be 2 verts minimum(bottom and top), we will ignore those """
+
+    deselect_all_verts()
+    # Select side edge and extend to select the entire side
+    ob.data.edges[1].select = True
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.loop_multi_select(ring=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # By multiplying the distance between verts with the cosine of the angle we get the actual height,
+    # and by dividing with the current height we get the height percentage of that loop cut
+    angle = atan(radius/height)
+
+    return sorted([(vector_distance(v.co, ob.data.vertices[0].co) * cos(angle)) / height for v in ob.data.vertices if v.select])[1:-1]
+
+
+def calculate_cylinder_height_percentages(ob: bpy.types.Object, height: float) -> list[float]:
+    """ Calculate the height percentages of the loop cuts by selecting 1 entire side, there's going to be 2 verts minimum(bottom and top), we will ignore those"""
+
+    deselect_all_verts()
+    # Select side edge and extend to select the entire side
+    ob.data.edges[2].select = True
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.loop_multi_select(ring=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    return sorted([vector_distance(v.co, ob.data.vertices[0].co)/height for v in ob.data.vertices if v.select])[1:-1]
+
+
+def insert_loop_cuts(ob: bpy.types.Object, height_percentages: list[float]) -> None:
+    """ Given a list of height percentages insert loop cuts at those heights """
+    if not height_percentages:
+        return
+
+    bpy.ops.object.select_all(action='DESELECT')
+    select_object(ob)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm = bmesh.from_edit_mesh(ob.data)
+
+    # Calculate actual cut Z heights based on the percentages
+    height = ob.dimensions.z
+    bottom_z = -height/2
+    cut_positions = [bottom_z + p * height for p in height_percentages]
+
+    for height in cut_positions:
+        plane_co = (0, 0, height)
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:]+bm.edges[:]+bm.faces[:], dist=0.01, plane_co=plane_co,
+                               plane_no=(0, 0, 1), use_snap_center=False, clear_outer=False, clear_inner=False)
+
+    bpy.ops.object.mode_set(mode='OBJECT')

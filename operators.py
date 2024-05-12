@@ -13,8 +13,10 @@ class RePrimitive(Operator):
     def execute(self, context):
         ob = context.active_object
         if ob and ob.type == 'MESH':  # Draw the pie menu only if the active object is a mesh
-            set_hidden_property("str", "ob_type", find_ob_type(ob))
-            bpy.ops.wm.call_menu_pie(name="OBJECT_MT_reprimitive_pie")
+            ob_type = find_ob_type(ob)
+            if ob_type != 'unknown':
+                set_hidden_property("str", "ob_type", ob_type)
+                bpy.ops.wm.call_menu_pie(name="OBJECT_MT_reprimitive_pie")
         return {'FINISHED'}
 
 
@@ -58,9 +60,6 @@ class RePrimitivePieMenu(Menu):
 
         pie.separator()  # WEST
         pie.separator()  # EAST
-        pie.popover(panel="OBJECT_PT_reprimitive_pie")  # NORTH
-        pie.popover_group(space_type="VIEW_3D",
-                          region_type="WINDOW", context="")  # SOUTH
 
         # SOUTH
         box = pie.box()
@@ -315,20 +314,23 @@ class RePrimitiveCone(Operator):
         children = save_and_unparent_children(ob.children)
         user_input = self.properties.is_property_set("vertices")
 
-        self.radius1, self.radius2, self.depth, vert_count, self.end_fill_type = calculate_cone_properties(
+        sharp_tipped, verts, self.cut_heights, self.radius1, self.radius2, self.depth, self.end_fill_type = calculate_cone_properties(
             ob)
         self.rotation = calculate_object_rotation(
-            ob, ob_type='cone', vertices=vert_count, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type)
-
+            ob, ob_type='cone', vertices=verts, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, cut_heights=self.cut_heights, sharp_tipped=sharp_tipped)
         self.calc_uvs = True if ob.data.uv_layers else False
-        self.location, self.difference = calculate_cone_location_and_difference(
-            ob, vertices=self.vertices, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, rotation=self.rotation)
+        if sharp_tipped or self.cut_heights:
+            self.location, self.difference = calculate_object_location_and_difference_no_origin_to_geometry(
+                ob, ob_type='cone', vertices=self.vertices, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, rotation=self.rotation, cut_heights=self.cut_heights)
+        else:
+            self.location, self.difference = calculate_object_location_and_difference(
+                ob)
 
         for child in children:
             reparent(child, ob)
 
         # If user called the operator with custom input overwrite and execute immediately to see it applied
-        self.vertices = self.vertices if user_input else vert_count
+        self.vertices = self.vertices if user_input else verts
         if user_input:
             return self.execute(context)
 
@@ -336,7 +338,7 @@ class RePrimitiveCone(Operator):
 
     def execute(self, context):
         replace_object(ob_type='cone', vertices=self.vertices, radius1=self.radius1, radius2=self.radius2, depth=self.depth, end_fill_type=self.end_fill_type, align=self.align, calc_uvs=self.calc_uvs,
-                       location=self.location, rotation=self.rotation, difference=self.difference)
+                       location=self.location, rotation=self.rotation, difference=self.difference, cut_heights=self.cut_heights)
 
         return {'FINISHED'}
 
@@ -433,20 +435,18 @@ class RePrimitiveCylinder(Operator):
         children = save_and_unparent_children(ob.children)
         user_input = self.properties.is_property_set("vertices")
 
-        self.location, self.difference = calculate_object_location_and_difference(
-            ob)
         self.calc_uvs = True if ob.data.uv_layers else False
-
-        self.radius, self.depth, verts,  self.end_fill_type = calculate_cylinder_properties(
+        verts, self.cut_heights, self.radius, self.depth, self.end_fill_type = calculate_cylinder_properties(
             ob)
         self.rotation = calculate_object_rotation(
-            ob, ob_type='cylinder', vertices=verts, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type)
+            ob, ob_type='cylinder', vertices=verts, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type, cut_heights=self.cut_heights)
+        self.linked_locations = [a+b for a, b in
+                                 [calculate_object_location_and_difference(ob) for ob in get_linked_objects(ob)]]
+        self.location, self.difference = calculate_object_location_and_difference_no_origin_to_geometry(
+            ob, ob_type='cylinder', vertices=self.vertices, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type, rotation=self.rotation, cut_heights=self.cut_heights)
 
         for child in children:
             reparent(child, ob)
-
-        self.linked_locations = [a+b for a, b in
-                                 [calculate_object_location_and_difference(ob) for ob in get_linked_objects(ob)]]
 
         # If user called the operator with custom input overwrite and execute immediately to see it applied
         self.vertices = self.vertices if user_input else verts
@@ -457,7 +457,7 @@ class RePrimitiveCylinder(Operator):
 
     def execute(self, context):
         replace_object(ob_type='cylinder', vertices=self.vertices, radius=self.radius, depth=self.depth, end_fill_type=self.end_fill_type, align=self.align, calc_uvs=self.calc_uvs,
-                       location=self.location, rotation=self.rotation, difference=self.difference)
+                       location=self.location, rotation=self.rotation, difference=self.difference, cut_heights=self.cut_heights)
 
         new_ob = bpy.context.object
         for loc in self.linked_locations:
